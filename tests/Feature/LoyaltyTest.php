@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\ClientProfile;
 use App\Models\LoyaltyLedger;
 use App\Models\LoyaltyRule;
+use App\Models\StaffProfile;
 use App\Models\User;
 use App\Services\LoyaltyService;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -23,7 +24,10 @@ beforeEach(function () {
     setPermissionsTeamId(null);
 
     $this->client = User::factory()->client()->create();
-    ClientProfile::factory()->for($this->client)->create(['visit_count' => 0]);
+    ClientProfile::factory()->for($this->client)->create([
+        'visit_count' => 0,
+        'home_branch_id' => $this->branch->id,
+    ]);
 
     $this->loyalty = app(LoyaltyService::class);
 });
@@ -188,7 +192,82 @@ it('refuses a pointless zero adjustment', function () {
         ->assertSessionHasErrors('points');
 });
 
-it('shows a booking in the admin list and filters by status', function () {
+/* ------------------------------------------------------------- the diary */
+
+it('shows the day a booking is on, not the day you happen to open', function () {
+    $day = now()->addDay();
+
+    Appointment::factory()->create([
+        'branch_id' => $this->branch->id,
+        'client_id' => $this->client->id,
+        'status' => AppointmentStatus::Confirmed,
+        'scheduled_start_at' => $day->copy()->setTime(10, 0),
+        'scheduled_end_at' => $day->copy()->setTime(10, 45),
+    ]);
+
+    $this->actingAs($this->owner);
+
+    // The grid opens on today, so tomorrow's booking is correctly absent.
+    $this->get('/admin/bookings')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('admin/bookings')
+            ->where('view', 'day')
+            ->has('bookings', 0));
+
+    $this->get('/admin/bookings?date='.$day->toDateString())
+        ->assertInertia(fn ($page) => $page
+            ->has('bookings', 1)
+            ->where('summary.confirmed', 1));
+});
+
+it('gives the day grid its chairs and its opening hours', function () {
+    $barber = User::factory()->create();
+    StaffProfile::factory()->for($barber)->create(['is_bookable' => true]);
+    $this->branch->staff()->attach($barber);
+
+    $this->branch->update(['opens_at' => '08:00', 'closes_at' => '19:00']);
+
+    $this->actingAs($this->owner)
+        ->get('/admin/bookings')
+        ->assertInertia(fn ($page) => $page
+            ->has('grids', 1)
+            ->where('grids.0.opens_minutes', 480)
+            ->where('grids.0.closes_minutes', 1140)
+            ->has('grids.0.columns', 1)
+            ->where('grids.0.columns.0.id', $barber->ulid));
+});
+
+it('places a booking on the grid by the minute', function () {
+    $barber = User::factory()->create();
+    StaffProfile::factory()->for($barber)->create(['is_bookable' => true]);
+    $this->branch->staff()->attach($barber);
+
+    Appointment::factory()->create([
+        'branch_id' => $this->branch->id,
+        'client_id' => $this->client->id,
+        'staff_id' => $barber->id,
+        'scheduled_start_at' => now($this->branch->timezone)->setTime(10, 30)->utc(),
+        'scheduled_end_at' => now($this->branch->timezone)->setTime(11, 15)->utc(),
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/admin/bookings')
+        ->assertInertia(fn ($page) => $page
+            ->where('bookings.0.start_minutes', 630)
+            ->where('bookings.0.end_minutes', 675)
+            ->where('bookings.0.staff_id', $barber->ulid));
+});
+
+it('covers the whole week in the week view', function () {
+    $this->actingAs($this->owner)
+        ->get('/admin/bookings?view=week')
+        ->assertInertia(fn ($page) => $page
+            ->where('view', 'week')
+            ->has('days', 7));
+});
+
+it('filters the list by status', function () {
     Appointment::factory()->create([
         'branch_id' => $this->branch->id,
         'client_id' => $this->client->id,
@@ -197,15 +276,40 @@ it('shows a booking in the admin list and filters by status', function () {
         'scheduled_end_at' => now()->addDay()->setTime(10, 45),
     ]);
 
-    $this->actingAs($this->owner)
-        ->get('/admin/bookings')
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->component('admin/bookings')
-            ->has('bookings', 1)
-            ->where('summary.confirmed', 1));
+    $this->actingAs($this->owner);
+
+    $this->get('/admin/bookings?view=list')
+        ->assertInertia(fn ($page) => $page->has('bookings', 1));
+
+    $this->get('/admin/bookings?view=list&status=completed')
+        ->assertInertia(fn ($page) => $page->has('bookings', 0));
+});
+
+/**
+ * An owner watches the group; a manager only sees the branch they run.
+ */
+it('offers every branch to an owner and only their own to a manager', function () {
+    $other = Branch::factory()->create();
+
+    $manager = User::factory()->create();
+    $manager->branches()->attach($this->branch, ['is_primary' => true]);
+    setPermissionsTeamId($this->branch->id);
+    $manager->assignRole('branch-manager');
+    setPermissionsTeamId(null);
+
+    // Every branch, plus the "All branches" entry.
+    $expected = Branch::count() + 1;
 
     $this->actingAs($this->owner)
-        ->get('/admin/bookings?status=completed')
-        ->assertInertia(fn ($page) => $page->has('bookings', 0));
+        ->get('/admin/bookings')
+        ->assertInertia(fn ($page) => $page->has('scopes', $expected));
+
+    // The manager works at one branch, so sees that and nothing else.
+    $this->actingAs($manager)
+        ->get('/admin/bookings')
+        ->assertInertia(fn ($page) => $page
+            ->has('scopes', 2)
+            ->where('scopes.1.value', $this->branch->slug));
+
+    expect($other->slug)->not->toBe($this->branch->slug);
 });

@@ -29,6 +29,9 @@ class BranchFactory extends Factory
             'address_line' => fake()->streetAddress(),
             'area' => fake()->city(),
             'city' => 'Harare',
+            // Explicit: a database default never reaches the in-memory model,
+            // which quietly makes a factory branch behave as UTC.
+            'timezone' => 'Africa/Harare',
             'latitude' => fake()->latitude(-18, -17),
             'longitude' => fake()->longitude(30, 32),
             'opens_at' => '08:00',
