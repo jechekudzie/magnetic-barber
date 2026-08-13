@@ -32,16 +32,29 @@ class CreateStaffMember extends Command
                             {--phone= : Mobile number, any format}
                             {--email= : Required for anyone who signs into the admin}
                             {--role= : owner|branch-manager|receptionist|barber|aesthetician}
-                            {--branch= : Branch slug they work at}';
+                            {--branch= : Branch slug they work at}
+                            {--password= : Leave out to have one generated}';
 
     protected $description = 'Create a staff account and assign their role at a branch';
 
     public function handle(): int
     {
+        // Deploy scripts and SSH one liners have no terminal to prompt at, so
+        // everything falls back to an option or a sensible default.
+        $interactive = $this->input->isInteractive();
+
         $branches = Branch::query()->ordered()->get();
 
         if ($branches->isEmpty()) {
             $this->error('No branches yet. Run php artisan db:seed --force first.');
+
+            return self::FAILURE;
+        }
+
+        if (! $interactive && ($this->option('name') === null || $this->option('phone') === null)) {
+            $this->error('Running without a terminal needs at least --name and --phone.');
+            $this->line('  php artisan magnetic:staff --name="Tapiwa Moyo" --phone=0781879820 \\');
+            $this->line('    --email=owner@magneticbarber.co.zw --role=owner --branch=harare-avenues');
 
             return self::FAILURE;
         }
@@ -70,11 +83,12 @@ class CreateStaffMember extends Command
 
         $existing = User::query()->where('phone', $normalised)->first();
 
-        if ($existing !== null && ! confirm("{$normalised} already belongs to {$existing->name}. Update them instead?")) {
+        if ($existing !== null && $interactive
+            && ! confirm("{$normalised} already belongs to {$existing->name}. Update them instead?")) {
             return self::FAILURE;
         }
 
-        $role = $this->option('role') ?: select(
+        $role = $this->option('role') ?: ($interactive ? select(
             label: 'Role at this branch',
             options: [
                 'barber' => 'Barber',
@@ -84,12 +98,12 @@ class CreateStaffMember extends Command
                 'owner' => 'Owner (sees every branch)',
             ],
             default: 'barber',
-        );
+        ) : 'barber');
 
-        $branchSlug = $this->option('branch') ?: select(
+        $branchSlug = $this->option('branch') ?: ($interactive ? select(
             label: 'Which branch',
             options: $branches->pluck('name', 'slug')->all(),
-        );
+        ) : $branches->first()->slug);
 
         $branch = $branches->firstWhere('slug', $branchSlug);
 
@@ -103,21 +117,27 @@ class CreateStaffMember extends Command
         // team page does not.
         $signsIn = in_array($role, ['owner', 'branch-manager', 'receptionist'], true)
             || $this->option('email') !== null
-            || confirm(label: "Does {$name} sign into the admin?", default: true);
+            || ($interactive && confirm(label: "Does {$name} sign into the admin?", default: true));
 
         $email = null;
         $secret = null;
 
         if ($signsIn) {
-            $email = $this->option('email') ?: text(
+            $email = $this->option('email') ?: ($interactive ? text(
                 label: 'Email for signing in',
                 required: true,
                 validate: fn (string $value): ?string => filter_var($value, FILTER_VALIDATE_EMAIL) === false
                     ? 'That is not an email address.'
                     : null,
-            );
+            ) : null);
 
-            $secret = password(
+            if ($email === null) {
+                $this->error("A {$role} signs into the admin, so --email is required.");
+
+                return self::FAILURE;
+            }
+
+            $secret = $this->option('password') ?: ($interactive ? password(
                 label: 'Password (leave blank to generate one)',
                 validate: function (string $value): ?string {
                     if ($value === '') {
@@ -133,8 +153,10 @@ class CreateStaffMember extends Command
                         ? 'At least 12 characters, with letters and numbers.'
                         : null;
                 },
-            );
+            ) : '');
 
+            // Blank means "generate one", whether that came from an empty
+            // prompt or from there being no terminal to prompt at.
             if ($secret === '') {
                 $secret = Str::password(16);
                 $generated = true;
