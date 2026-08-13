@@ -23,7 +23,7 @@ class TeamSeeder extends Seeder
         $staff = [
             [
                 'name' => 'Tapiwa Moyo',
-                'email' => 'owner@magneticbarbershop.co.zw',
+                'email' => 'owner@magneticbarber.co.zw',
                 'phone' => '+263781879820',
                 'role' => 'owner',
                 'title' => 'Owner and Master Barber',
@@ -34,7 +34,7 @@ class TeamSeeder extends Seeder
             ],
             [
                 'name' => 'Rudo Chikwanha',
-                'email' => 'manager@magneticbarbershop.co.zw',
+                'email' => 'manager@magneticbarber.co.zw',
                 'phone' => '+263782000001',
                 'role' => 'branch-manager',
                 'title' => 'Branch Manager',
