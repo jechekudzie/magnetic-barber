@@ -1,0 +1,238 @@
+@import 'tailwindcss';
+
+@import 'tw-animate-css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+    --font-sans:
+        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+
+    /* The slab from the wordmark. Headlines only, never body copy. */
+    --font-display: 'Zilla Slab', ui-serif, Georgia, serif;
+
+    /* Brand tokens. These are fixed values, not theme aware: the public site
+       is always the dark gold room, whatever the visitor's system setting. */
+    --color-ink: #0d0d0d;
+    --color-panel: #1b1b1b;
+    --color-panel-alt: #242424;
+    --color-gold: #d9a947;
+    --color-gold-lite: #f0cc80;
+    --color-bone: #ffffff;
+    --color-smoke: #9c9488;
+    --color-go: #3fa46a;
+    --color-stop: #c7442e;
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    /* Gold is the action colour in the admin, on white. */
+    --primary: #d9a947;
+    --primary-foreground: #0d0d0d;
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: #d9a947;
+    --chart-1: oklch(0.646 0.222 41.116);
+    --chart-2: oklch(0.6 0.118 184.704);
+    --chart-3: oklch(0.398 0.07 227.392);
+    --chart-4: oklch(0.828 0.189 84.429);
+    --chart-5: oklch(0.769 0.188 70.08);
+    --radius: 0.625rem;
+    /* The admin sidebar is the brand's black panel in both themes, so the
+       shop reads as one product from the site through to the till. */
+    --sidebar: #0d0d0d;
+    --sidebar-foreground: #ffffff;
+    --sidebar-primary: #d9a947;
+    --sidebar-primary-foreground: #0d0d0d;
+    --sidebar-accent: #242424;
+    --sidebar-accent-foreground: #f0cc80;
+    --sidebar-border: rgb(255 255 255 / 0.1);
+    --sidebar-ring: #d9a947;
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.145 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.145 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: #d9a947;
+    --primary-foreground: #0d0d0d;
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.396 0.141 25.723);
+    --destructive-foreground: oklch(0.637 0.237 25.331);
+    --border: oklch(0.269 0 0);
+    --input: oklch(0.269 0 0);
+    --ring: oklch(0.439 0 0);
+    --chart-1: oklch(0.488 0.243 264.376);
+    --chart-2: oklch(0.696 0.17 162.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --sidebar: #0d0d0d;
+    --sidebar-foreground: #ffffff;
+    --sidebar-primary: #d9a947;
+    --sidebar-primary-foreground: #0d0d0d;
+    --sidebar-accent: #242424;
+    --sidebar-accent-foreground: #f0cc80;
+    --sidebar-border: rgb(255 255 255 / 0.1);
+    --sidebar-ring: #d9a947;
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+
+    /* The public site owns its own colours. Wrapping it in .site rather than
+       relying on .dark keeps the admin free to follow the appearance toggle. */
+    .site {
+        @apply bg-ink text-bone;
+        color-scheme: dark;
+    }
+
+    .site ::selection {
+        @apply bg-gold text-ink;
+    }
+
+    .site :focus-visible {
+        @apply outline-2 outline-offset-2 outline-gold;
+    }
+}
+
+@layer components {
+    /* Headline type: tight slab, the voice of the deck. */
+    .site-display {
+        font-family: var(--font-display);
+        @apply leading-[0.95] font-bold tracking-tight;
+    }
+
+    /* The small gold all caps label that opens most sections. */
+    .site-eyebrow {
+        @apply text-gold text-xs font-semibold tracking-[0.22em] uppercase;
+    }
+
+    /* Panel surface used by every card on the site. */
+    .site-panel {
+        @apply bg-panel border-bone/8 rounded-2xl border;
+    }
+
+    .site-panel-hover {
+        @apply hover:border-gold/40 hover:bg-panel-alt transition-colors duration-200;
+    }
+
+    /* Warm glow behind the hero and the skin band. */
+    .site-glow {
+        background:
+            radial-gradient(
+                60% 50% at 50% 0%,
+                rgb(217 169 71 / 0.16) 0%,
+                transparent 70%
+            ),
+            radial-gradient(
+                40% 40% at 85% 30%,
+                rgb(217 169 71 / 0.08) 0%,
+                transparent 70%
+            );
+    }
+
+    /* The logo art ships on solid black. Screen blending drops that square
+       out so the mark sits on any dark surface without a visible edge. */
+    .site-logo-blend {
+        mix-blend-mode: screen;
+    }
+}
+
+@utility scrollbar-none {
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .site *,
+    .site *::before,
+    .site *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

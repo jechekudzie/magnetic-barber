@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Magnetic Barbershop">
+    <title>Magnetic Barbershop</title>
+
+    <rect width="64" height="64" rx="14" fill="#0D0D0D"/>
+
+    <!--
+        The magnet arch from the wordmark's M: two legs joined by an arch.
+        Drawn as a thick stroked arc so it stays crisp down to 16px.
+    -->
+    <g fill="none" stroke="#D9A947" stroke-width="9" stroke-linecap="butt">
+        <path d="M17 45 A15 15 0 0 1 47 45"/>
+    </g>
+
+    <!-- The poles, squared off like the logo. -->
+    <rect x="12.5" y="43" width="9" height="9" fill="#D9A947"/>
+    <rect x="42.5" y="43" width="9" height="9" fill="#F0CC80"/>
+</svg>
