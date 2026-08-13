@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Casts\PhoneNumber;
 use App\Support\Phone;
+use Carbon\CarbonInterface;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -17,7 +18,6 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Carbon;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -33,19 +33,19 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $name
  * @property string|null $email
  * @property string|null $phone
- * @property Carbon|null $phone_verified_at
- * @property Carbon|null $email_verified_at
+ * @property CarbonInterface|null $phone_verified_at
+ * @property CarbonInterface|null $email_verified_at
  * @property string|null $password
  * @property string|null $avatar_path
  * @property string $locale
  * @property bool $is_active
- * @property Carbon|null $last_seen_at
+ * @property CarbonInterface|null $last_seen_at
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
- * @property Carbon|null $two_factor_confirmed_at
+ * @property CarbonInterface|null $two_factor_confirmed_at
  * @property string|null $remember_token
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
  * @property int|null $points_balance Aggregate, only present when withSum is used
  */
 #[Fillable(['name', 'email', 'password', 'phone', 'avatar_path', 'locale'])]

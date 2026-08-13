@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\HasCatalogSlug;
 use App\Support\Money;
+use Carbon\CarbonInterface;
 use Database\Factories\BranchFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -15,7 +16,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -46,8 +46,8 @@ use Illuminate\Support\Carbon;
  * @property array<int, int>|null $house_call_days_open
  * @property int $sort_order
  * @property bool $is_active
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
  */
 #[Fillable(['slug', 'code', 'name', 'tagline', 'phone', 'whatsapp', 'email', 'address_line', 'area', 'city', 'latitude', 'longitude', 'directions_note', 'timezone', 'opens_at', 'closes_at', 'days_open', 'chair_count', 'house_call_enabled', 'house_call_radius_km', 'house_call_fee_cents',
     'house_call_opens_at', 'house_call_closes_at', 'house_call_days_open',

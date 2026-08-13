@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AppointmentStatus;
 use App\Enums\AppointmentType;
 use App\Support\Money;
+use Carbon\CarbonInterface;
 use Database\Factories\AppointmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -15,7 +16,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -28,8 +28,8 @@ use Illuminate\Support\Str;
  * @property AppointmentType $type
  * @property AppointmentStatus $status
  * @property string $source
- * @property Carbon|null $scheduled_start_at
- * @property Carbon|null $scheduled_end_at
+ * @property CarbonInterface|null $scheduled_start_at
+ * @property CarbonInterface|null $scheduled_end_at
  * @property int|null $style_id
  * @property string|null $client_note
  * @property int $subtotal_cents
@@ -65,10 +65,22 @@ class Appointment extends Model
         // Kept in one place so no caller can forget it and quietly reopen the
         // double booking hole, or leave a cancelled slot permanently blocked.
         static::saving(function (self $appointment): void {
-            $appointment->slot_key = $appointment->holdsItsSlot()
-                ? "{$appointment->staff_id}@{$appointment->scheduled_start_at?->utc()->format('Y-m-d H:i')}"
-                : null;
+            $appointment->slot_key = $appointment->slotKey();
         });
+    }
+
+    /**
+     * The value the unique index guards, or null when this appointment no
+     * longer holds its slot.
+     *
+     * Public because seeders run with model events off, and would otherwise
+     * write rows the database guard does not cover.
+     */
+    public function slotKey(): ?string
+    {
+        return $this->holdsItsSlot()
+            ? "{$this->staff_id}@{$this->scheduled_start_at?->utc()->format('Y-m-d H:i')}"
+            : null;
     }
 
     /**

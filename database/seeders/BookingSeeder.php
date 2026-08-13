@@ -39,6 +39,14 @@ class BookingSeeder extends Seeder
         'Kudzai Marufu', 'Panashe Zimuto', 'Anesu Mhlanga', 'Tatenda Chikafu',
         'Simba Mangwiro', 'Ropafadzo Dube', 'Munashe Tavera', 'Chiedza Mapfumo',
         'Tafara Ncube', 'Rumbidzai Kaseke', 'Blessing Zhou', 'Tanaka Mabhena',
+        'Kuda Mutero', 'Shamiso Nyoni', 'Batsirai Chuma', 'Tsitsi Mareva',
+        'Lloyd Chigumba', 'Memory Sithole', 'Prosper Mutsvangwa', 'Yeukai Rusike',
+        'Never Mudiwa', 'Grace Chimuka', 'Wellington Dziva', 'Precious Manatsa',
+        'Tapfuma Zvobgo', 'Loveness Mhaka', 'Edmore Nyamande', 'Sekai Chidzero',
+        'Talent Muponda', 'Nomsa Bhebhe', 'Garikai Zvavamwe', 'Fadzai Mhondoro',
+        'Tarisai Muchena', 'Bothwell Sango', 'Rejoice Mukwena', 'Admire Nhema',
+        'Tichaona Gwatidzo', 'Patience Mafuta', 'Brighton Kanyemba', 'Shingi Rwodzi',
+        'Charity Mabika', 'Norman Chiwara', 'Vongai Musekiwa', 'Elton Zvenyika',
     ];
 
     public function run(): void
@@ -60,9 +68,17 @@ class BookingSeeder extends Seeder
 
         $clients = $this->clients($accounts, $branches->first());
 
-        // Taken slots per staff per start time, so no two bookings collide on
-        // the unique slot key the way a real double booking would be refused.
-        $taken = [];
+        /*
+         * Slots already held, so re-running this does not walk into the unique
+         * index and get refused the way a real double booking would be. Keyed
+         * exactly as Appointment::slotKey() writes them.
+         */
+        $taken = Appointment::query()
+            ->whereNotNull('slot_key')
+            ->pluck('slot_key')
+            ->flip()
+            ->all();
+
         $created = 0;
 
         foreach ($branches as $branch) {
@@ -116,10 +132,16 @@ class BookingSeeder extends Seeder
 
                     $taken[$key] = true;
 
+                    // Weighted to regulars, so the repeat rate is a real
+                    // mix rather than everybody being a regular.
+                    $client = random_int(1, 10) <= 7
+                        ? $clients->take(15)->random()
+                        : $clients->random();
+
                     $this->book(
                         $branch,
                         $staff,
-                        $clients->random(),
+                        $client,
                         $services->shuffle()->take(random_int(1, 2)),
                         $start,
                         $offset,
@@ -187,6 +209,10 @@ class BookingSeeder extends Seeder
             'currency' => $subtotal->currency,
             'duration_minutes' => $duration,
         ]);
+
+        // Seeders run with model events off, so the slot guard the saving
+        // hook would normally set is written here instead.
+        $appointment->forceFill(['slot_key' => $appointment->slotKey()])->saveQuietly();
 
         foreach ($services as $service) {
             $price = $service->priceForLoadedBranch() ?? Money::ofCents(0, $subtotal->currency);

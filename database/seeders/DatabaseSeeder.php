@@ -15,23 +15,38 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        /*
+         * Safe to run against production, and safe to re run: every one of
+         * these matches on a slug or a phone number and updates in place.
+         *
+         * This is real shop data, not sample data. Roles are required for
+         * anyone to log in at all.
+         */
         $this->call([
             RolesAndPermissionsSeeder::class,
             BranchSeeder::class,
             CatalogSeeder::class,
             StyleSeeder::class,
             PlanSeeder::class,
-            TeamSeeder::class,
         ]);
 
-        // Development conveniences and placeholder copy, never in production.
-        if (! app()->isProduction()) {
-            $this->call([
-                ReviewSeeder::class,
-                AdminUserSeeder::class,
-                // Sample bookings last, so staff and prices already exist.
-                BookingSeeder::class,
-            ]);
+        if (app()->isProduction()) {
+            $this->command->info('Catalog seeded. Create staff with: php artisan magnetic:staff');
+
+            return;
         }
+
+        /*
+         * Placeholder people, copy and traffic. None of this may reach
+         * production: TeamSeeder invents five barbers and gives two of them a
+         * known password, which on a live site is an open door.
+         */
+        $this->call([
+            TeamSeeder::class,
+            ReviewSeeder::class,
+            AdminUserSeeder::class,
+            // Sample bookings last, so staff and prices already exist.
+            BookingSeeder::class,
+        ]);
     }
 }

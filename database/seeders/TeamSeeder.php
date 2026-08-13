@@ -81,7 +81,21 @@ class TeamSeeder extends Seeder
 
         $second = Branch::where('slug', 'borrowdale')->first();
 
+        /*
+         * A known password is fine on a laptop and unacceptable anywhere else.
+         * Outside local development each account gets a random one, reported
+         * once so whoever ran the seeder can hand it over.
+         */
+        $knownPassword = app()->environment(['local', 'testing']);
+        $issued = [];
+
         foreach ($staff as $order => $member) {
+            $secret = $knownPassword ? 'password' : Str::password(16);
+
+            if (! $knownPassword && $member['email'] !== null) {
+                $issued[$member['email']] = $secret;
+            }
+
             $user = User::updateOrCreate(
                 ['phone' => $member['phone']],
                 [
@@ -89,7 +103,7 @@ class TeamSeeder extends Seeder
                     'email' => $member['email'],
                     'email_verified_at' => $member['email'] ? now() : null,
                     'phone_verified_at' => now(),
-                    'password' => Hash::make('password'),
+                    'password' => Hash::make($secret),
                     'is_active' => true,
                 ],
             );
@@ -142,5 +156,13 @@ class TeamSeeder extends Seeder
         }
 
         setPermissionsTeamId(null);
+
+        foreach ($issued as $email => $secret) {
+            $this->command->warn("  {$email} password: {$secret}");
+        }
+
+        if ($issued !== []) {
+            $this->command->line('  Shown once. Hand them over securely and have them changed.');
+        }
     }
 }

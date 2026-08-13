@@ -4,12 +4,12 @@ namespace App\Models;
 
 use App\Enums\ClientSource;
 use App\Support\Money;
+use Carbon\CarbonInterface;
 use Database\Factories\ClientProfileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -17,7 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $account_number
  * @property int|null $home_branch_id
  * @property int|null $preferred_staff_id
- * @property Carbon|null $date_of_birth
+ * @property CarbonInterface|null $date_of_birth
  * @property string|null $gender
  * @property string|null $notes
  * @property ClientSource $source
@@ -28,9 +28,9 @@ use Illuminate\Support\Carbon;
  * @property int $visit_count
  * @property int $lifetime_value_cents
  * @property string $currency
- * @property Carbon|null $first_visit_at
- * @property Carbon|null $last_visit_at
- * @property Carbon|null $marketing_opt_in_at
+ * @property CarbonInterface|null $first_visit_at
+ * @property CarbonInterface|null $last_visit_at
+ * @property CarbonInterface|null $marketing_opt_in_at
  */
 #[Fillable(['user_id', 'account_number', 'home_branch_id', 'preferred_staff_id', 'date_of_birth', 'gender', 'notes', 'source', 'referred_by_user_id', 'referral_code', 'whatsapp_opt_in', 'sms_opt_in', 'push_opt_in', 'marketing_opt_in', 'marketing_opt_in_at',
     // Visit counters, written when an appointment is completed.

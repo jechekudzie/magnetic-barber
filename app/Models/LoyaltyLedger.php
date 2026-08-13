@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
 
 /**
  * @property int $client_id
@@ -14,8 +14,8 @@ use Illuminate\Support\Carbon;
  * @property int $points
  * @property int $balance_after
  * @property string|null $description
- * @property Carbon|null $expires_at
- * @property Carbon|null $created_at
+ * @property CarbonInterface|null $expires_at
+ * @property CarbonInterface|null $created_at
  */
 #[Fillable([
     'client_id', 'branch_id', 'appointment_id', 'type', 'points',
