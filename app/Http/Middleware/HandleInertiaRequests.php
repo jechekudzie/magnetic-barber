@@ -2,7 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Branch;
+use App\Services\ReminderService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -33,6 +36,27 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
+    /**
+     * The sidebar badge. Cached briefly because it renders on every admin
+     * page and the answer only moves when somebody books or a day passes.
+     */
+    private function overdueClients(Request $request): int
+    {
+        if ($request->user()?->can('client.view') !== true) {
+            return 0;
+        }
+
+        // The container binding is untyped, so check rather than assume.
+        $branch = app()->bound('currentBranch') ? app('currentBranch') : null;
+        $branch = $branch instanceof Branch ? $branch : null;
+
+        return Cache::remember(
+            'reminders.due.'.($branch === null ? 'all' : $branch->id),
+            now()->addMinutes(5),
+            fn (): int => app(ReminderService::class)->dueCount($branch),
+        );
+    }
+
     public function share(Request $request): array
     {
         return [
@@ -42,6 +66,9 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'counts' => [
+                'reminders' => $this->overdueClients($request),
+            ],
         ];
     }
 }

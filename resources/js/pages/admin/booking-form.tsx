@@ -4,7 +4,6 @@ import {
     Clock,
     Loader2,
     Scissors,
-    Search,
     TriangleAlert,
     UserPlus,
 } from 'lucide-react';
@@ -17,7 +16,6 @@ import {
 } from '@/components/admin/form';
 import { AdminPage, Pill } from '@/components/admin/page';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { Branch, ServiceCategory, Style } from '@/types/catalog';
@@ -43,6 +41,20 @@ type Props = {
     prefill: { date: string; time: string | null; staff: string | null };
 };
 
+const QUICK_DATES = [
+    { label: 'Today', days: 0 },
+    { label: 'Tomorrow', days: 1 },
+    { label: 'In a week', days: 7 },
+];
+
+/** Plain date maths on a Y-m-d string, in the branch's day, not the browser's. */
+function shiftDate(from: string, days: number): string {
+    const date = new Date(`${from}T12:00:00`);
+    date.setDate(date.getDate() + days);
+
+    return date.toISOString().slice(0, 10);
+}
+
 export default function BookingForm({
     branchContext,
     categories,
@@ -55,9 +67,10 @@ export default function BookingForm({
     const [selected, setSelected] = useState<string[]>([]);
     const [found, setFound] = useState<FoundClient[]>([]);
     const [picked, setPicked] = useState<FoundClient | null>(null);
-    const [query, setQuery] = useState('');
+    const [searching, setSearching] = useState(false);
     const [slots, setSlots] = useState<Slot[]>([]);
     const searchTimer = useRef<number | null>(null);
+    const clientSearch = useRef<AbortController | null>(null);
 
     const form = useForm({
         client: '',
@@ -70,6 +83,14 @@ export default function BookingForm({
         time: prefill.time ?? '',
         note: '',
     });
+
+    /**
+     * Half a number is not "nobody on file", it is half a number. Only say so
+     * once there is enough typed to have found somebody.
+     */
+    const worthJudging =
+        form.data.name.trim().length >= 3 ||
+        form.data.phone.replace(/\D/g, '').replace(/^0+/, '').length >= 3;
 
     const chosen = useMemo(
         () =>
@@ -149,7 +170,6 @@ export default function BookingForm({
     /* ------------------------------------------------------ client lookup */
 
     function searchClients(value: string) {
-        setQuery(value);
         setPicked(null);
         form.setData('client', '');
 
@@ -157,21 +177,41 @@ export default function BookingForm({
             window.clearTimeout(searchTimer.current);
         }
 
+        clientSearch.current?.abort();
+
         if (value.trim().length < 2) {
             setFound([]);
+            setSearching(false);
 
             return;
         }
 
+        setSearching(true);
+
         // Waits for a pause in typing rather than a request per keystroke.
         searchTimer.current = window.setTimeout(async () => {
-            const response = await fetch(
-                `/admin/bookings/clients?q=${encodeURIComponent(value)}`,
-                { headers: { Accept: 'application/json' } },
-            );
+            const controller = new AbortController();
+            clientSearch.current = controller;
 
-            if (response.ok) {
-                setFound((await response.json()).data ?? []);
+            try {
+                const response = await fetch(
+                    `/admin/bookings/clients?q=${encodeURIComponent(value)}`,
+                    {
+                        headers: { Accept: 'application/json' },
+                        signal: controller.signal,
+                    },
+                );
+
+                if (response.ok) {
+                    setFound((await response.json()).data ?? []);
+                }
+            } catch {
+                // An aborted request is expected when typing continues.
+                return;
+            } finally {
+                if (!controller.signal.aborted) {
+                    setSearching(false);
+                }
             }
         }, 300);
     }
@@ -179,8 +219,18 @@ export default function BookingForm({
     function choose(client: FoundClient) {
         setPicked(client);
         setFound([]);
-        setQuery(client.name);
+        setSearching(false);
         form.setData('client', client.id);
+        form.setData('name', client.name);
+        form.setData('phone', client.phone ?? '');
+    }
+
+    function forgetClient() {
+        setPicked(null);
+        setFound([]);
+        form.setData('client', '');
+        form.setData('name', '');
+        form.setData('phone', '');
     }
 
     function submit() {
@@ -214,58 +264,130 @@ export default function BookingForm({
             >
                 <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
                     <div className="space-y-4">
+                        {/* ------------------------------------ when */}
+                        <FormSection
+                            title="When"
+                            description="Set the day and time first. Reception is usually told when before they are told what."
+                        >
+                            <div className="flex flex-wrap items-end gap-3">
+                                <TextField
+                                    label="Date"
+                                    required
+                                    type="date"
+                                    value={form.data.date}
+                                    error={form.errors.date}
+                                    onChange={(value) =>
+                                        form.setData('date', value)
+                                    }
+                                    className="w-44"
+                                />
+                                <TextField
+                                    label="Time"
+                                    required
+                                    type="time"
+                                    value={form.data.time}
+                                    error={form.errors.time}
+                                    onChange={(value) =>
+                                        form.setData('time', value)
+                                    }
+                                    className="w-36"
+                                />
+                                <SelectField
+                                    label="Barber"
+                                    value={form.data.staff}
+                                    onChange={(value) =>
+                                        form.setData('staff', value)
+                                    }
+                                    options={[
+                                        { value: 'any', label: 'Any barber' },
+                                        ...barbers.map((barber) => ({
+                                            value: barber.id,
+                                            label: barber.name,
+                                        })),
+                                    ]}
+                                />
+                                <div className="flex flex-wrap gap-1.5 pb-1">
+                                    {QUICK_DATES.map((quick) => (
+                                        <button
+                                            key={quick.label}
+                                            type="button"
+                                            onClick={() =>
+                                                form.setData(
+                                                    'date',
+                                                    shiftDate(
+                                                        prefill.date,
+                                                        quick.days,
+                                                    ),
+                                                )
+                                            }
+                                            className={cn(
+                                                'rounded-md border px-2.5 py-1.5 text-sm transition-colors',
+                                                form.data.date ===
+                                                    shiftDate(
+                                                        prefill.date,
+                                                        quick.days,
+                                                    )
+                                                    ? 'border-primary bg-primary text-primary-foreground'
+                                                    : 'hover:border-primary/50',
+                                            )}
+                                        >
+                                            {quick.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Suggestions, not a gate. A manager may book a
+                                time the public grid would never offer. */}
+                            {selected.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">
+                                    Type a time above, or pick a cut below and
+                                    the free times appear here.
+                                </p>
+                            ) : slots.length === 0 ? (
+                                <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                                    <TriangleAlert
+                                        className="mt-0.5 size-4 shrink-0 text-amber-600"
+                                        aria-hidden="true"
+                                    />
+                                    <p>
+                                        Nothing free that day for that barber.
+                                        The time above still stands, and will be
+                                        refused only if it truly clashes.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {slots.map((slot) => (
+                                        <button
+                                            key={slot.start}
+                                            type="button"
+                                            onClick={() =>
+                                                form.setData(
+                                                    'time',
+                                                    to24Hour(slot.label),
+                                                )
+                                            }
+                                            className={cn(
+                                                'rounded-md border px-2.5 py-1.5 text-sm tabular-nums transition-colors',
+                                                form.data.time ===
+                                                    to24Hour(slot.label)
+                                                    ? 'border-primary bg-primary text-primary-foreground'
+                                                    : 'hover:border-primary/50',
+                                            )}
+                                        >
+                                            {slot.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </FormSection>
+
                         {/* ------------------------------------- who */}
                         <FormSection
                             title="Who is it for"
-                            description="Search by name or number. A new client gets an account automatically."
+                            description="Start typing a name or number. Anyone who has been in before comes up as you type."
                         >
-                            <label className="flex flex-col gap-1.5">
-                                <span className="text-sm font-medium">
-                                    Find an existing client
-                                </span>
-                                <span className="relative">
-                                    <Search
-                                        className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2"
-                                        aria-hidden="true"
-                                    />
-                                    <Input
-                                        value={query}
-                                        placeholder="Tendai, or 9820"
-                                        onChange={(event) =>
-                                            searchClients(event.target.value)
-                                        }
-                                        className="pl-9"
-                                    />
-                                </span>
-                            </label>
-
-                            {found.length > 0 && (
-                                <ul className="divide-y rounded-lg border">
-                                    {found.map((client) => (
-                                        <li key={client.id}>
-                                            <button
-                                                type="button"
-                                                onClick={() => choose(client)}
-                                                className="hover:bg-muted/60 flex w-full items-center justify-between gap-3 p-3 text-left text-sm"
-                                            >
-                                                <span>
-                                                    <span className="block font-medium">
-                                                        {client.name}
-                                                    </span>
-                                                    <span className="text-muted-foreground block text-xs">
-                                                        {client.phone} ·{' '}
-                                                        {client.account_number}
-                                                    </span>
-                                                </span>
-                                                <span className="text-muted-foreground shrink-0 text-xs">
-                                                    {client.visit_count} visits
-                                                </span>
-                                            </button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-
                             {picked ? (
                                 <div className="border-primary/50 bg-primary/5 flex items-start gap-3 rounded-lg border p-3">
                                     <Check
@@ -277,6 +399,7 @@ export default function BookingForm({
                                             {picked.name}
                                         </p>
                                         <p className="text-muted-foreground">
+                                            {picked.phone} ·{' '}
                                             {picked.account_number} ·{' '}
                                             {picked.visit_count} visits
                                             {picked.last_visit &&
@@ -286,33 +409,23 @@ export default function BookingForm({
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        onClick={() => {
-                                            setPicked(null);
-                                            setQuery('');
-                                            form.setData('client', '');
-                                        }}
+                                        onClick={forgetClient}
                                     >
                                         Change
                                     </Button>
                                 </div>
                             ) : (
-                                <div className="space-y-4 border-t pt-4">
-                                    <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
-                                        <UserPlus
-                                            className="size-4"
-                                            aria-hidden="true"
-                                        />
-                                        Or take a new client's details
-                                    </p>
+                                <>
                                     <div className="grid gap-4 sm:grid-cols-2">
                                         <TextField
                                             label="Name"
                                             required
                                             value={form.data.name}
                                             error={form.errors.name}
-                                            onChange={(value) =>
-                                                form.setData('name', value)
-                                            }
+                                            onChange={(value) => {
+                                                form.setData('name', value);
+                                                searchClients(value);
+                                            }}
                                             placeholder="Tendai Moyo"
                                         />
                                         <TextField
@@ -320,13 +433,80 @@ export default function BookingForm({
                                             required
                                             value={form.data.phone}
                                             error={form.errors.phone}
-                                            onChange={(value) =>
-                                                form.setData('phone', value)
-                                            }
+                                            onChange={(value) => {
+                                                form.setData('phone', value);
+                                                searchClients(value);
+                                            }}
                                             placeholder="078 187 9820"
                                         />
                                     </div>
-                                </div>
+
+                                    {/* Whatever reception types, matches land
+                                        here. Silence would read as broken, so
+                                        searching and no-match both say so. */}
+                                    {searching && (
+                                        <p className="text-muted-foreground flex items-center gap-2 text-sm">
+                                            <Loader2
+                                                className="size-3.5 animate-spin"
+                                                aria-hidden="true"
+                                            />
+                                            Looking them up
+                                        </p>
+                                    )}
+
+                                    {!searching && found.length > 0 && (
+                                        <div className="space-y-1.5">
+                                            <p className="text-muted-foreground text-sm">
+                                                {found.length === 1
+                                                    ? 'One match. Tap to use their details.'
+                                                    : `${found.length} matches. Tap to use their details.`}
+                                            </p>
+                                            <ul className="divide-y rounded-lg border">
+                                                {found.map((client) => (
+                                                    <li key={client.id}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                choose(client)
+                                                            }
+                                                            className="hover:bg-muted/60 flex w-full items-center justify-between gap-3 p-3 text-left text-sm transition-colors"
+                                                        >
+                                                            <span>
+                                                                <span className="block font-medium">
+                                                                    {client.name}
+                                                                </span>
+                                                                <span className="text-muted-foreground block text-xs tabular-nums">
+                                                                    {client.phone}{' '}
+                                                                    ·{' '}
+                                                                    {
+                                                                        client.account_number
+                                                                    }
+                                                                </span>
+                                                            </span>
+                                                            <span className="text-muted-foreground shrink-0 text-xs">
+                                                                {
+                                                                    client.visit_count
+                                                                }{' '}
+                                                                visits
+                                                            </span>
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {!searching && found.length === 0 && worthJudging && (
+                                            <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
+                                                <UserPlus
+                                                    className="size-4"
+                                                    aria-hidden="true"
+                                                />
+                                                Nobody on file. This books a new
+                                                client and opens their account.
+                                            </p>
+                                        )}
+                                </>
                             )}
                         </FormSection>
 
@@ -472,95 +652,7 @@ export default function BookingForm({
                         </FormSection>
 
                         {/* ------------------------------------ when */}
-                        <FormSection title="When">
-                            <div className="flex flex-wrap gap-4">
-                                <SelectField
-                                    label="Barber"
-                                    value={form.data.staff}
-                                    onChange={(value) =>
-                                        form.setData('staff', value)
-                                    }
-                                    options={[
-                                        { value: 'any', label: 'Any barber' },
-                                        ...barbers.map((barber) => ({
-                                            value: barber.id,
-                                            label: barber.name,
-                                        })),
-                                    ]}
-                                />
-                                <TextField
-                                    label="Date"
-                                    required
-                                    type="date"
-                                    value={form.data.date}
-                                    error={form.errors.date}
-                                    onChange={(value) =>
-                                        form.setData('date', value)
-                                    }
-                                    className="w-44"
-                                />
-                            </div>
-
-                            {selected.length === 0 ? (
-                                <p className="text-muted-foreground text-sm">
-                                    Pick a service and the free times appear.
-                                </p>
-                            ) : slots.length === 0 ? (
-                                <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-                                    <TriangleAlert
-                                        className="mt-0.5 size-4 shrink-0 text-amber-600"
-                                        aria-hidden="true"
-                                    />
-                                    <p>
-                                        Nothing free that day for that barber.
-                                        You can still type a time below, and it
-                                        will be refused only if it truly clashes.
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="flex flex-wrap gap-1.5">
-                                    {slots.map((slot) => {
-                                        const value = slot.label
-                                            .replace(/(am|pm)/, '')
-                                            .trim();
-
-                                        return (
-                                            <button
-                                                key={slot.start}
-                                                type="button"
-                                                onClick={() =>
-                                                    form.setData(
-                                                        'time',
-                                                        to24Hour(slot.label),
-                                                    )
-                                                }
-                                                className={cn(
-                                                    'rounded-md border px-2.5 py-1.5 text-sm tabular-nums transition-colors',
-                                                    form.data.time ===
-                                                        to24Hour(slot.label)
-                                                        ? 'border-primary bg-primary text-primary-foreground'
-                                                        : 'hover:border-primary/50',
-                                                )}
-                                            >
-                                                {value}
-                                                {slot.label.slice(-2)}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-
-                            <TextField
-                                label="Time"
-                                required
-                                type="time"
-                                hint="A manager may book a time the public grid would not offer"
-                                value={form.data.time}
-                                error={form.errors.time}
-                                onChange={(value) => form.setData('time', value)}
-                                className="w-40"
-                            />
-
+                        <FormSection title="Anything else">
                             <TextArea
                                 label="Note for the barber"
                                 value={form.data.note}

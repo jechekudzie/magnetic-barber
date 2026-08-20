@@ -239,3 +239,50 @@ it('finds a client from the number the way reception hears it', function () {
             ->assertJsonPath('data.0.name', 'Tendai Moyo');
     }
 });
+
+it('records a booking from just a name, a number, a cut and a time', function () {
+    // The desk minimum. No barber, no style, no note: reception is on the
+    // phone and the client has said four things.
+    $this->actingAs($this->reception)
+        ->post('/admin/bookings', [
+            'name' => 'Farai Chikwanha',
+            'phone' => '0782223344',
+            'service_ids' => [$this->service->ulid],
+            'date' => now($this->branch->timezone)->addDay()->toDateString(),
+            'time' => '10:00',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $appointment = Appointment::firstOrFail();
+
+    // No barber named means the shop picks one, rather than leaving a
+    // booking nobody owns.
+    expect($appointment->staff_id)->not->toBeNull()
+        ->and($appointment->style_id)->toBeNull()
+        ->and($appointment->client->name)->toBe('Farai Chikwanha')
+        ->and($appointment->client->phone)->toBe('+263782223344');
+});
+
+it('books an existing client even when the barber only sees a masked number', function () {
+    $client = User::factory()->client()->create([
+        'name' => 'Tendai Moyo',
+        'phone' => '+263781879820',
+    ]);
+    ClientProfile::factory()->for($client)->create(['home_branch_id' => $this->branch->id]);
+
+    // What a barber's screen actually holds after picking from live search.
+    $this->actingAs($this->barber)
+        ->post('/admin/bookings', [
+            'client' => $client->ulid,
+            'name' => 'Tendai Moyo',
+            'phone' => '+2637****820',
+            'service_ids' => [$this->service->ulid],
+            'date' => now($this->branch->timezone)->addDay()->toDateString(),
+            'time' => '11:00',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect(Appointment::firstOrFail()->client->phone)->toBe('+263781879820');
+});

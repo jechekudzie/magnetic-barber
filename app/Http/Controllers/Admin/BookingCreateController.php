@@ -149,8 +149,11 @@ class BookingCreateController extends AdminController
 
         $validated = $request->validate([
             'client' => ['nullable', 'string', 'exists:users,ulid'],
-            'name' => ['required_without:client', 'nullable', 'string', 'min:2', 'max:80'],
-            'phone' => ['required_without:client', 'nullable', 'string', 'phone:ZW,mobile'],
+            // Excluded outright when an existing client is chosen: their own
+            // record is the truth, and a barber only ever sees a masked
+            // number to send back here anyway.
+            'name' => ['exclude_with:client', 'required_without:client', 'nullable', 'string', 'min:2', 'max:80'],
+            'phone' => ['exclude_with:client', 'required_without:client', 'nullable', 'string', 'phone:ZW,mobile'],
             'service_ids' => ['required', 'array', 'min:1', 'max:5'],
             'service_ids.*' => ['string', 'exists:services,ulid'],
             'style' => ['nullable', 'string', 'exists:styles,ulid'],

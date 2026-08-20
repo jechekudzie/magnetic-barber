@@ -10,6 +10,11 @@ use App\Models\ReminderSchedule;
 use App\Models\Setting;
 use App\Models\User;
 use App\Support\Phone;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Who has stopped coming, and who is about to.
@@ -28,6 +33,17 @@ final class ReminderService
     /** How many days ahead of the threshold somebody counts as almost due. */
     public const SETTING_WARN_KEY = 'winback_warn_days';
 
+    /** The words the shop uses when it chases somebody. */
+    public const SETTING_MESSAGE_KEY = 'winback_message';
+
+    /**
+     * How far ahead the board looks. Wider than the warn window so the screen
+     * can offer "next 3 weeks" without going back to the database.
+     */
+    public const HORIZON_DAYS = 28;
+
+    public const DEFAULT_MESSAGE = 'Hi {name}, it has been {days} days since your last cut at {shop}. Want us to book you in this week?';
+
     public function thresholdDays(?int $branchId = null): int
     {
         return (int) Setting::get(
@@ -42,6 +58,61 @@ final class ReminderService
         return (int) Setting::get(self::SETTING_WARN_KEY, 5, $branchId);
     }
 
+    public function messageTemplate(?int $branchId = null): string
+    {
+        return (string) Setting::get(self::SETTING_MESSAGE_KEY, self::DEFAULT_MESSAGE, $branchId);
+    }
+
+    /**
+     * Fill the shop's template in for one client. Kept here so the screen, the
+     * nightly job and any future WhatsApp integration all say the same thing.
+     *
+     * @param  array<string, mixed>  $client
+     */
+    public function renderMessage(array $client, ?string $template = null, ?string $shop = null): string
+    {
+        $first = explode(' ', trim((string) $client['name']))[0];
+
+        return strtr($template ?? self::DEFAULT_MESSAGE, [
+            '{name}' => $first,
+            '{days}' => (string) $client['days_since'],
+            '{shop}' => $shop ?? config('app.name'),
+            '{branch}' => (string) ($client['branch'] ?? $shop ?? config('app.name')),
+        ]);
+    }
+
+    /**
+     * The sidebar badge is cached, so anything that changes who is overdue has
+     * to say so. Otherwise reception books somebody and the badge argues.
+     */
+    public static function forgetCount(): void
+    {
+        Cache::forget('reminders.due.all');
+
+        foreach (Branch::query()->pluck('id') as $branchId) {
+            Cache::forget('reminders.due.'.$branchId);
+        }
+    }
+
+    /**
+     * Just the number for the sidebar badge. One aggregate rather than the
+     * whole board, because it runs on every admin page.
+     */
+    public function dueCount(?Branch $branch = null): int
+    {
+        $threshold = $this->thresholdDays($branch?->id);
+
+        $query = $this->lapsedQuery($branch);
+
+        // "Overdue by the client's own cycle, or the shop's if they have none."
+        // Written per driver so both stay literal SQL.
+        DB::connection()->getDriverName() === 'sqlite'
+            ? $query->whereRaw("last_visit_at <= datetime('now', '-' || COALESCE(preferred_cycle_days, ?) || ' days')", [$threshold])
+            : $query->whereRaw('last_visit_at <= DATE_SUB(UTC_TIMESTAMP(), INTERVAL COALESCE(preferred_cycle_days, ?) DAY)', [$threshold]);
+
+        return $query->count();
+    }
+
     /**
      * Everyone with a visit behind them, split into who is late and who is
      * nearly there, so the shop can chase one list and watch the other.
@@ -53,15 +124,20 @@ final class ReminderService
         $threshold = $this->thresholdDays($branch?->id);
         $warn = $this->warnDays($branch?->id);
 
-        $rows = ClientProfile::query()
-            ->whereNotNull('last_visit_at')
-            ->where('visit_count', '>', 0)
-            ->where('reminders_enabled', true)
-            ->when($branch !== null, fn ($query) => $query->where('home_branch_id', $branch->id))
+        $profiles = $this->lapsedQuery($branch)
             ->with(['user', 'homeBranch'])
-            ->get()
-            ->map(fn (ClientProfile $profile): ?array => $this->assess($profile, $threshold))
-            ->filter()
+            ->get();
+
+        // One query for who has already been chased, rather than one per row.
+        $messaged = ReminderSchedule::query()
+            ->whereNotNull('sent_at')
+            ->whereIn('client_id', $profiles->pluck('user_id'))
+            ->selectRaw('client_id, MAX(sent_at) as last_sent')
+            ->groupBy('client_id')
+            ->pluck('last_sent', 'client_id');
+
+        $rows = $profiles
+            ->map(fn (ClientProfile $profile): array => $this->assess($profile, $threshold, $messaged))
             ->values();
 
         return [
@@ -73,7 +149,7 @@ final class ReminderService
                 ->values()
                 ->all(),
             'soon' => $rows
-                ->filter(fn (array $row): bool => $row['days_over'] < 0 && $row['days_over'] >= -$warn)
+                ->filter(fn (array $row): bool => $row['days_over'] < 0 && $row['days_over'] >= -self::HORIZON_DAYS)
                 ->sortBy('days_until')
                 ->values()
                 ->all(),
@@ -159,6 +235,8 @@ final class ReminderService
      */
     public function cancelFor(int $clientId, string $reason = 'Client booked again'): int
     {
+        self::forgetCount();
+
         return ReminderSchedule::query()
             ->where('client_id', $clientId)
             ->pending()
@@ -166,15 +244,11 @@ final class ReminderService
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @param  Collection<int, mixed>  $messaged
+     * @return array<string, mixed>
      */
-    private function assess(ClientProfile $profile, int $shopThreshold): ?array
+    private function assess(ClientProfile $profile, int $shopThreshold, Collection $messaged): array
     {
-        // Someone already booked is not lapsed, whatever the gap.
-        if ($this->hasUpcoming($profile->user_id)) {
-            return null;
-        }
-
         // What the client asked for beats the shop default.
         $threshold = $profile->preferred_cycle_days ?? $shopThreshold;
         $days = (int) $profile->last_visit_at->diffInDays(now(), true);
@@ -185,7 +259,8 @@ final class ReminderService
             'id' => $profile->user?->ulid,
             'name' => $profile->user?->name,
             'phone' => $profile->user?->phone,
-            'whatsapp' => $this->whatsAppLink($profile->user, $days),
+            'phone_display' => Phone::forDisplay($profile->user?->phone),
+            'whatsapp_number' => Phone::forWhatsAppLink($profile->user?->phone),
             'branch_id' => $profile->home_branch_id,
             'branch' => $profile->homeBranch?->name,
             'account_number' => $profile->account_number,
@@ -195,39 +270,36 @@ final class ReminderService
             'threshold' => $threshold,
             'days_over' => $over,
             'days_until' => max(0, -$over),
+            'due_on' => $profile->last_visit_at->copy()->addDays($threshold)->toDateString(),
+            'last_messaged' => ($messaged[$profile->user_id] ?? null) === null
+                ? null
+                : Date::parse($messaged[$profile->user_id])->toDateString(),
             'preferred_cycle_days' => $profile->preferred_cycle_days,
             'average_cycle_days' => $profile->average_cycle_days,
             'marketing_opt_in' => $profile->marketing_opt_in,
         ];
     }
 
-    private function hasUpcoming(int $clientId): bool
-    {
-        return Appointment::query()
-            ->where('client_id', $clientId)
-            ->whereIn('status', AppointmentStatus::blocking())
-            ->where('scheduled_start_at', '>=', now())
-            ->exists();
-    }
-
     /**
-     * A link reception can click to message them right now. This works today,
-     * with no messaging integration behind it.
+     * Everyone who could lapse: has been in, still wants chasing, and has
+     * nothing already in the diary. Somebody already booked is not lapsed,
+     * whatever the gap.
+     *
+     * @return Builder<ClientProfile>
      */
-    private function whatsAppLink(?User $client, int $days): ?string
+    private function lapsedQuery(?Branch $branch): Builder
     {
-        if ($client === null || blank($client->phone)) {
-            return null;
-        }
-
-        $number = Phone::forWhatsAppLink($client->phone);
-        $first = explode(' ', trim($client->name))[0];
-
-        $text = rawurlencode(
-            "Hi {$first}, it has been {$days} days since your last cut at Magnetic. "
-            .'Want us to book you in this week?'
-        );
-
-        return "https://wa.me/{$number}?text={$text}";
+        return ClientProfile::query()
+            ->whereNotNull('last_visit_at')
+            ->where('visit_count', '>', 0)
+            ->where('reminders_enabled', true)
+            ->when($branch !== null, fn ($query) => $query->where('home_branch_id', $branch->id))
+            ->whereNotExists(function ($query) {
+                $query->selectRaw('1')
+                    ->from('appointments')
+                    ->whereColumn('appointments.client_id', 'client_profiles.user_id')
+                    ->whereIn('appointments.status', AppointmentStatus::blocking())
+                    ->where('appointments.scheduled_start_at', '>=', now());
+            });
     }
 }

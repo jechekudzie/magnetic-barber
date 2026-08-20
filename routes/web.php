@@ -88,6 +88,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->middleware('can:settings.manage')->name('reminders.settings');
         Route::put('reminders/client', [ReminderController::class, 'updateClient'])
             ->middleware('can:client.update')->name('reminders.client');
+        Route::put('reminders/messaged', [ReminderController::class, 'markClientMessaged'])
+            ->middleware('can:message.send')->name('reminders.messaged');
         Route::put('reminders/{reminder}/sent', [ReminderController::class, 'markSent'])
             ->middleware('can:message.send')->name('reminders.sent');
         Route::put('bookings/{appointment}/status', [BookingController::class, 'updateStatus'])
