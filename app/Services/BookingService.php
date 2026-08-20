@@ -23,6 +23,7 @@ final class BookingService
         private readonly ClientAccountService $accounts,
         private readonly AvailabilityService $availability,
         private readonly LoyaltyService $loyalty,
+        private readonly ReminderService $reminders,
     ) {}
 
     /**
@@ -83,7 +84,7 @@ final class BookingService
      * Create the appointment. Everything that has to be true at once happens
      * inside one transaction with the conflicting rows locked.
      *
-     * @param  array{name: string, phone: string, service_ids: list<int>, staff_id: int|null, start: string, style_id: int|null, note: string|null, type?: AppointmentType, address?: array{address_line: string, area: string|null, directions_note: string|null}|null}  $data
+     * @param  array{name: string, phone: string, service_ids: list<int>, staff_id: int|null, start: string, style_id: int|null, note: string|null, type?: AppointmentType, source?: string, address?: array{address_line: string, area: string|null, directions_note: string|null}|null}  $data
      */
     public function book(Branch $branch, array $data): Appointment
     {
@@ -155,7 +156,8 @@ final class BookingService
                 'staff_id' => $staffId,
                 'type' => $type,
                 'status' => AppointmentStatus::Confirmed,
-                'source' => 'web',
+                // Where the booking came from, for the channel report.
+                'source' => $data['source'] ?? 'web',
                 'scheduled_start_at' => $start,
                 'scheduled_end_at' => $end,
                 'style_id' => $data['style_id'] ?? null,
@@ -197,6 +199,9 @@ final class BookingService
                     'qty' => 1,
                 ]);
             }
+
+            // They have booked, so stop chasing them.
+            $this->reminders->cancelFor($client->id);
 
             return $appointment->load(['branch', 'staff.staffProfile', 'services', 'client', 'houseCall']);
         });

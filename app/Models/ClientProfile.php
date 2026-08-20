@@ -31,10 +31,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonInterface|null $first_visit_at
  * @property CarbonInterface|null $last_visit_at
  * @property CarbonInterface|null $marketing_opt_in_at
+ * @property int|null $average_cycle_days
+ * @property int|null $preferred_cycle_days
+ * @property bool $reminders_enabled
  */
 #[Fillable(['user_id', 'account_number', 'home_branch_id', 'preferred_staff_id', 'date_of_birth', 'gender', 'notes', 'source', 'referred_by_user_id', 'referral_code', 'whatsapp_opt_in', 'sms_opt_in', 'push_opt_in', 'marketing_opt_in', 'marketing_opt_in_at',
     // Visit counters, written when an appointment is completed.
-    'first_visit_at', 'last_visit_at', 'visit_count', 'lifetime_value_cents', 'average_cycle_days'])]
+    'first_visit_at', 'last_visit_at', 'visit_count', 'lifetime_value_cents',
+    'average_cycle_days', 'preferred_cycle_days', 'reminders_enabled'])]
 class ClientProfile extends Model
 {
     /** @use HasFactory<ClientProfileFactory> */
@@ -52,6 +56,7 @@ class ClientProfile extends Model
             'sms_opt_in' => 'boolean',
             'push_opt_in' => 'boolean',
             'marketing_opt_in' => 'boolean',
+            'reminders_enabled' => 'boolean',
             'marketing_opt_in_at' => 'datetime',
             'first_visit_at' => 'datetime',
             'last_visit_at' => 'datetime',

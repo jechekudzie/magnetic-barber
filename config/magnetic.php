@@ -49,4 +49,19 @@ return [
 
     'catalog_cache_seconds' => (int) env('MAGNETIC_CATALOG_CACHE_SECONDS', 300),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Retention
+    |--------------------------------------------------------------------------
+    |
+    | How long a client may go without a cut before the shop chases them. Used
+    | only for clients whose own visit rhythm is not yet known.
+    |
+    */
+
+    'winback_days' => (int) env('MAGNETIC_WINBACK_DAYS', 21),
+
+    // Where the shop actually is, for anything scheduled by the clock.
+    'timezone' => env('MAGNETIC_TIMEZONE', 'Africa/Harare'),
+
 ];

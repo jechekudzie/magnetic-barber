@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import {
+    BellRing,
     CalendarCheck,
     CalendarRange,
     FolderTree,
@@ -42,6 +43,7 @@ const mainNavItems: NavItem[] = [
     { title: 'Style gallery', href: '/admin/styles', icon: Scissors },
     { title: 'Plans', href: '/admin/plans', icon: CalendarRange },
     { title: 'Loyalty', href: '/admin/loyalty', icon: Gem },
+    { title: 'Reminders', href: '/admin/reminders', icon: BellRing },
     { title: 'Team', href: '/admin/team', icon: Users },
     { title: 'Reviews', href: '/admin/reviews', icon: Star },
     { title: 'Branches', href: '/admin/branches', icon: MapPin },

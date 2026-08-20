@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\Admin\BookingController;
+use App\Http\Controllers\Admin\BookingCreateController;
 use App\Http\Controllers\Admin\CatalogAdminController;
 use App\Http\Controllers\Admin\CategoryCrudController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\LoyaltyController;
 use App\Http\Controllers\Admin\PlanCrudController;
 use App\Http\Controllers\Admin\PricingController;
+use App\Http\Controllers\Admin\ReminderController;
 use App\Http\Controllers\Admin\ServiceCrudController;
 use App\Http\Controllers\Admin\StyleCrudController;
 use App\Http\Controllers\Admin\TeamCrudController;
@@ -70,6 +72,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('bookings', [BookingController::class, 'index'])
             ->middleware('can:appointment.view.branch')->name('bookings');
+
+        Route::get('bookings/create', [BookingCreateController::class, 'create'])
+            ->middleware('can:appointment.create')->name('bookings.create');
+        Route::post('bookings', [BookingCreateController::class, 'store'])
+            ->middleware('can:appointment.create')->name('bookings.store');
+        Route::get('bookings/clients', [BookingCreateController::class, 'findClient'])
+            ->middleware('can:client.view')->name('bookings.clients');
+        Route::get('bookings/availability', [BookingCreateController::class, 'availability'])
+            ->middleware('can:appointment.create')->name('bookings.availability');
+
+        Route::get('reminders', [ReminderController::class, 'index'])
+            ->middleware('can:client.view')->name('reminders');
+        Route::put('reminders/settings', [ReminderController::class, 'updateSettings'])
+            ->middleware('can:settings.manage')->name('reminders.settings');
+        Route::put('reminders/client', [ReminderController::class, 'updateClient'])
+            ->middleware('can:client.update')->name('reminders.client');
+        Route::put('reminders/{reminder}/sent', [ReminderController::class, 'markSent'])
+            ->middleware('can:message.send')->name('reminders.sent');
         Route::put('bookings/{appointment}/status', [BookingController::class, 'updateStatus'])
             ->middleware('can:appointment.update')->name('bookings.status');
 

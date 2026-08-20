@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\ClientProfile;
 use App\Models\User;
 use App\Services\LoyaltyService;
+use App\Services\ReminderService;
 use App\Support\Money;
 use App\Support\Phone;
 use Illuminate\Database\Eloquent\Builder;
@@ -87,8 +88,11 @@ class BookingController extends AdminController
             ->limit($view === 'list' ? self::MAX_ROWS : 500)
             ->get();
 
+        // A barber may see who is in their chair but not how to contact them.
+        $maySeeContact = $request->user()?->can('client.contact.view') ?? false;
+
         $bookings = $appointments
-            ->map(fn (Appointment $appointment): array => $this->row($appointment, $timezone))
+            ->map(fn (Appointment $appointment): array => $this->row($appointment, $timezone, $maySeeContact))
             ->all();
 
         return inertia('admin/bookings', [
@@ -162,6 +166,7 @@ class BookingController extends AdminController
         Request $request,
         Appointment $appointment,
         LoyaltyService $loyalty,
+        ReminderService $reminders,
     ): RedirectResponse {
         abort_unless($request->user()?->can('appointment.update'), 403);
 
@@ -172,7 +177,7 @@ class BookingController extends AdminController
 
         $status = AppointmentStatus::from($validated['status']);
 
-        DB::transaction(function () use ($appointment, $status, $validated, $request, $loyalty): void {
+        DB::transaction(function () use ($appointment, $status, $validated, $request, $loyalty, $reminders): void {
             $appointment->update([
                 'status' => $status,
                 'checked_in_at' => $status === AppointmentStatus::CheckedIn ? now() : $appointment->checked_in_at,
@@ -190,6 +195,13 @@ class BookingController extends AdminController
             if ($status === AppointmentStatus::Completed) {
                 $this->recordVisit($appointment);
                 $loyalty->awardForVisit($appointment->refresh());
+
+                // A finished visit is when we learn how often this client
+                // actually comes, and resets the clock on chasing them.
+                if ($appointment->client !== null) {
+                    $reminders->recomputeCycle($appointment->client);
+                    $reminders->cancelFor($appointment->client_id, 'Client came in');
+                }
             }
         });
 
@@ -350,7 +362,7 @@ class BookingController extends AdminController
     /**
      * @return array<string, mixed>
      */
-    private function row(Appointment $appointment, string $timezone): array
+    private function row(Appointment $appointment, string $timezone, bool $maySeeContact = false): array
     {
         $start = $appointment->scheduled_start_at?->copy()->timezone($timezone);
         $end = $appointment->scheduled_end_at?->copy()->timezone($timezone);
@@ -376,9 +388,11 @@ class BookingController extends AdminController
             'staff' => $appointment->staff?->staffProfile?->name() ?? $appointment->staff?->name,
             'client' => [
                 'name' => $appointment->client?->name,
-                // Reception and managers need this to chase a no show; the
-                // barber-facing screens deliberately never show it.
-                'phone' => $appointment->client?->phone,
+                // Reception and managers need this to chase a no show. A
+                // barber gets it masked, by design.
+                'phone' => $maySeeContact
+                    ? $appointment->client?->phone
+                    : Phone::mask($appointment->client?->phone),
                 'account_number' => $appointment->client?->clientProfile()->value('account_number'),
                 'visit_count' => $appointment->client?->clientProfile()->value('visit_count') ?? 0,
             ],

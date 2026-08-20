@@ -4,6 +4,7 @@ import {
     ChevronLeft,
     ChevronRight,
     LayoutList,
+    Plus,
     Search,
     TriangleAlert,
 } from 'lucide-react';
@@ -83,6 +84,14 @@ export default function Bookings({
                                 ))}
                             </select>
                         )}
+
+                        <Button
+                            size="sm"
+                            onClick={() => router.get('/admin/bookings/create', { date })}
+                        >
+                            <Plus className="size-4" aria-hidden="true" />
+                            New booking
+                        </Button>
 
                         <div className="bg-muted flex rounded-md p-0.5">
                             {VIEWS.map((option) => (
