@@ -84,7 +84,7 @@ final class BookingService
      * Create the appointment. Everything that has to be true at once happens
      * inside one transaction with the conflicting rows locked.
      *
-     * @param  array{name: string, phone: string, service_ids: list<int>, staff_id: int|null, start: string, style_id: int|null, note: string|null, type?: AppointmentType, source?: string, address?: array{address_line: string, area: string|null, directions_note: string|null}|null}  $data
+     * @param  array{name: string, phone: string, service_ids: list<int>, staff_id: int|null, start: string, style_id: int|null, note: string|null, type?: AppointmentType, source?: string, redeem_points?: bool, created_by?: int|null, address?: array{address_line: string, area: string|null, directions_note: string|null}|null}  $data
      */
     public function book(Branch $branch, array $data): Appointment
     {
@@ -149,6 +149,15 @@ final class BookingService
                 ? $branch->houseCallFee()
                 : Money::ofCents(0, $subtotal->currency);
 
+            // Points come off the services, not the travel: a house call fee
+            // is a cost the shop actually incurs.
+            $redemption = ($data['redeem_points'] ?? false) === true
+                ? $this->loyalty->plannedRedemption($client, $subtotal)
+                : null;
+
+            $discount = $redemption['discount']
+                ?? Money::ofCents(0, $subtotal->currency);
+
             $appointment = Appointment::create([
                 'reference' => Appointment::generateReference(),
                 'branch_id' => $branch->id,
@@ -164,7 +173,8 @@ final class BookingService
                 'client_note' => $data['note'] ?? null,
                 'subtotal_cents' => $subtotal->cents,
                 'travel_fee_cents' => $travelFee->cents,
-                'total_cents' => $subtotal->plus($travelFee)->cents,
+                'discount_cents' => $discount->cents,
+                'total_cents' => $subtotal->plus($travelFee)->minus($discount)->cents,
                 'currency' => $subtotal->currency,
                 'duration_minutes' => $duration,
                 'created_by' => $client->id,
@@ -198,6 +208,15 @@ final class BookingService
                     'duration_minutes' => $service->durationForLoadedBranch(),
                     'qty' => 1,
                 ]);
+            }
+
+            if ($redemption !== null) {
+                $this->loyalty->redeem(
+                    $client,
+                    $redemption['points'],
+                    $appointment,
+                    $data['created_by'] ?? null,
+                );
             }
 
             // They have booked, so stop chasing them.

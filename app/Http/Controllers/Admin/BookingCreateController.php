@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\AvailabilityService;
 use App\Services\BookingService;
 use App\Services\CatalogService;
+use App\Services\LoyaltyService;
 use App\Services\StyleService;
 use App\Support\Phone;
 use App\Support\ResourcePayload;
@@ -62,7 +63,7 @@ class BookingCreateController extends AdminController
      * partial match on name or number: at the desk you get "Tendai" or the
      * last four digits, not a clean lookup key.
      */
-    public function findClient(Request $request): JsonResponse
+    public function findClient(Request $request, LoyaltyService $loyalty): JsonResponse
     {
         abort_unless($request->user()?->can('client.view'), 403);
 
@@ -103,6 +104,9 @@ class BookingCreateController extends AdminController
                 'account_number' => $client->clientProfile->account_number,
                 'visit_count' => $client->clientProfile->visit_count,
                 'last_visit' => $client->clientProfile->last_visit_at?->toDateString(),
+                // So the desk can offer the discount rather than the client
+                // having to know they have one.
+                'loyalty' => $loyalty->summaryFor($client),
             ])
             ->all();
 
@@ -161,6 +165,7 @@ class BookingCreateController extends AdminController
             'date' => ['required', 'date_format:Y-m-d'],
             'time' => ['required', 'date_format:H:i'],
             'note' => ['nullable', 'string', 'max:500'],
+            'redeem_points' => ['nullable', 'boolean'],
         ], [
             'phone.phone' => 'That does not look like a Zimbabwean mobile number.',
             'name.required_without' => 'Give a name, or pick an existing client.',
@@ -203,6 +208,11 @@ class BookingCreateController extends AdminController
                     ? null
                     : Style::query()->where('ulid', $validated['style'])->value('id'),
                 'note' => $validated['note'] ?? null,
+                // Only ever for a client already on file. A brand new client
+                // has no balance to spend.
+                'redeem_points' => ! empty($validated['client'])
+                    && ($validated['redeem_points'] ?? false),
+                'created_by' => $request->user()->id,
             ]);
         } catch (SlotTakenException $exception) {
             // Surfaced on the time field, which is the thing to change.

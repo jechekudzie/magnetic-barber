@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\StaffProfile;
 use App\Models\Style;
 use App\Models\User;
+use App\Services\LoyaltyService;
 use App\Services\ReminderService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 
@@ -285,4 +286,104 @@ it('books an existing client even when the barber only sees a masked number', fu
         ->assertSessionHasNoErrors();
 
     expect(Appointment::firstOrFail()->client->phone)->toBe('+263781879820');
+});
+
+/* ------------------------------------------------------------- loyalty */
+
+it('takes a reward off the bill when reception spends the points', function () {
+    $client = User::factory()->client()->create(['phone' => '+263781879820']);
+    ClientProfile::factory()->for($client)->create(['home_branch_id' => $this->branch->id]);
+
+    // 50 points is one $5 reward under the default rule.
+    app(LoyaltyService::class)->adjust($client, 50, 'Opening balance');
+
+    $this->actingAs($this->reception)
+        ->post('/admin/bookings', [
+            'client' => $client->ulid,
+            'service_ids' => [$this->service->ulid],
+            'date' => now($this->branch->timezone)->addDay()->toDateString(),
+            'time' => '10:00',
+            'redeem_points' => true,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $appointment = Appointment::firstOrFail();
+
+    expect($appointment->subtotal_cents)->toBe(1200)
+        ->and($appointment->discount_cents)->toBe(500)
+        ->and($appointment->total_cents)->toBe(700)
+        // Spent, not merely displayed: the balance has actually moved.
+        ->and(app(LoyaltyService::class)->balanceFor($client))->toBe(0);
+});
+
+it('leaves the bill alone when reception does not spend the points', function () {
+    $client = User::factory()->client()->create(['phone' => '+263781879820']);
+    ClientProfile::factory()->for($client)->create(['home_branch_id' => $this->branch->id]);
+    app(LoyaltyService::class)->adjust($client, 50, 'Opening balance');
+
+    $this->actingAs($this->reception)
+        ->post('/admin/bookings', [
+            'client' => $client->ulid,
+            'service_ids' => [$this->service->ulid],
+            'date' => now($this->branch->timezone)->addDay()->toDateString(),
+            'time' => '10:00',
+        ])->assertRedirect();
+
+    expect(Appointment::firstOrFail()->discount_cents)->toBe(0)
+        ->and(app(LoyaltyService::class)->balanceFor($client))->toBe(50);
+});
+
+it('never discounts more than the bill', function () {
+    $client = User::factory()->client()->create(['phone' => '+263781879820']);
+    ClientProfile::factory()->for($client)->create(['home_branch_id' => $this->branch->id]);
+
+    // Five rewards ($25) against a $12 cut. Points buy a cut, not credit.
+    app(LoyaltyService::class)->adjust($client, 250, 'Long standing regular');
+
+    $this->actingAs($this->reception)
+        ->post('/admin/bookings', [
+            'client' => $client->ulid,
+            'service_ids' => [$this->service->ulid],
+            'date' => now($this->branch->timezone)->addDay()->toDateString(),
+            'time' => '10:00',
+            'redeem_points' => true,
+        ])->assertRedirect();
+
+    $appointment = Appointment::firstOrFail();
+
+    expect($appointment->discount_cents)->toBe(1000)
+        ->and($appointment->total_cents)->toBe(200)
+        // Only the two blocks actually used are spent.
+        ->and(app(LoyaltyService::class)->balanceFor($client))->toBe(150);
+});
+
+it('cannot spend points a new client does not have', function () {
+    $this->actingAs($this->reception)
+        ->post('/admin/bookings', [
+            'name' => 'Farai Chikwanha',
+            'phone' => '0782223344',
+            'service_ids' => [$this->service->ulid],
+            'date' => now($this->branch->timezone)->addDay()->toDateString(),
+            'time' => '10:00',
+            'redeem_points' => true,
+        ])->assertRedirect();
+
+    expect(Appointment::firstOrFail()->discount_cents)->toBe(0);
+});
+
+it('shows reception what a returning client has saved up', function () {
+    $client = User::factory()->client()->create([
+        'name' => 'Tendai Moyo',
+        'phone' => '+263781879820',
+    ]);
+    ClientProfile::factory()->for($client)->create(['home_branch_id' => $this->branch->id]);
+    app(LoyaltyService::class)->adjust($client, 60, 'Opening balance');
+
+    $this->actingAs($this->reception)
+        ->getJson('/admin/bookings/clients?q=0781879820')
+        ->assertOk()
+        ->assertJsonPath('data.0.loyalty.points', 60)
+        ->assertJsonPath('data.0.loyalty.redeemable', true)
+        ->assertJsonPath('data.0.loyalty.value.formatted', '$5');
 });

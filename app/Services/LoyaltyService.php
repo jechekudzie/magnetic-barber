@@ -93,9 +93,61 @@ final class LoyaltyService
     }
 
     /**
+     * What this client can take off a bill of this size, in whole reward
+     * blocks. Never more than the bill itself: points buy a cut, not credit,
+     * and a negative total is a refund nobody authorised.
+     *
+     * @return array{points: int, discount: Money}|null
+     */
+    public function plannedRedemption(User $client, Money $bill): ?array
+    {
+        $rule = LoyaltyRule::current();
+        $threshold = max(1, $rule->redemption_threshold);
+
+        if ($rule->redemption_value_cents < 1) {
+            return null;
+        }
+
+        $blocks = min(
+            intdiv($this->balanceFor($client), $threshold),
+            intdiv($bill->cents, $rule->redemption_value_cents),
+        );
+
+        if ($blocks < 1) {
+            return null;
+        }
+
+        return [
+            'points' => $blocks * $threshold,
+            'discount' => Money::ofCents(
+                $blocks * $rule->redemption_value_cents,
+                $rule->currency,
+            ),
+        ];
+    }
+
+    /**
+     * Spend points against a booking. Negative points, so the balance is still
+     * a plain SUM over the ledger and the redemption can be explained later.
+     */
+    public function redeem(User $client, int $points, Appointment $appointment, ?int $byUserId = null): LoyaltyLedger
+    {
+        return LoyaltyLedger::create([
+            'client_id' => $client->id,
+            'branch_id' => $appointment->branch_id,
+            'appointment_id' => $appointment->id,
+            'type' => 'redeem',
+            'points' => -abs($points),
+            'balance_after' => $this->balanceFor($client) - abs($points),
+            'description' => "Redeemed against {$appointment->reference}",
+            'created_by' => $byUserId,
+        ]);
+    }
+
+    /**
      * What a balance is worth right now, and whether it can be spent yet.
      *
-     * @return array{points: int, redeemable: bool, threshold: int, value: array<string, mixed>, to_next: int}
+     * @return array{points: int, redeemable: bool, threshold: int, value: array<string, mixed>, reward: array<string, mixed>, to_next: int}
      */
     public function summaryFor(User $client): array
     {
@@ -108,6 +160,9 @@ final class LoyaltyService
             'redeemable' => $points >= $rule->redemption_threshold,
             'threshold' => $rule->redemption_threshold,
             'value' => Money::ofCents($rule->valueOfCents($points), $rule->currency)->toArray(),
+            // What one block off the bill is worth, so a screen can work out
+            // the discount against a given basket without guessing.
+            'reward' => $rule->redemptionValue()->toArray(),
             'to_next' => $points >= $threshold ? 0 : $threshold - $points,
         ];
     }

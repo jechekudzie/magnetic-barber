@@ -1,6 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import {
     Check,
+    Gem,
     Clock,
     Loader2,
     Scissors,
@@ -29,6 +30,14 @@ type FoundClient = {
     account_number: string | null;
     visit_count: number;
     last_visit: string | null;
+    loyalty: {
+        points: number;
+        redeemable: boolean;
+        threshold: number;
+        value: { cents: number; formatted: string };
+        reward: { cents: number; formatted: string };
+        to_next: number;
+    };
 };
 
 type Slot = { start: string; label: string };
@@ -82,6 +91,7 @@ export default function BookingForm({
         date: prefill.date,
         time: prefill.time ?? '',
         note: '',
+        redeem_points: false as boolean,
     });
 
     /**
@@ -108,6 +118,29 @@ export default function BookingForm({
         (sum, service) => sum + service.duration_minutes,
         0,
     );
+
+    /**
+     * What their points take off this particular bill. Mirrors the server,
+     * which stays the authority on what is actually spent: whole rewards only,
+     * and never more than the bill, because points buy a cut, not credit.
+     */
+    const discountCents = useMemo(() => {
+        const loyalty = picked?.loyalty;
+
+        if (!loyalty || loyalty.reward.cents < 1) {
+            return 0;
+        }
+
+        const blocks = Math.min(
+            Math.floor(loyalty.points / Math.max(1, loyalty.threshold)),
+            Math.floor(totalCents / loyalty.reward.cents),
+        );
+
+        return Math.max(0, blocks) * loyalty.reward.cents;
+    }, [picked, totalCents]);
+
+    const redeeming = form.data.redeem_points && discountCents > 0;
+    const dueCents = totalCents - (redeeming ? discountCents : 0);
 
     /* --------------------------------------------------------- free times */
 
@@ -223,6 +256,7 @@ export default function BookingForm({
         form.setData('client', client.id);
         form.setData('name', client.name);
         form.setData('phone', client.phone ?? '');
+        form.setData('redeem_points', false);
     }
 
     function forgetClient() {
@@ -231,6 +265,7 @@ export default function BookingForm({
         form.setData('client', '');
         form.setData('name', '');
         form.setData('phone', '');
+        form.setData('redeem_points', false);
     }
 
     function submit() {
@@ -388,7 +423,7 @@ export default function BookingForm({
                             title="Who is it for"
                             description="Start typing a name or number. Anyone who has been in before comes up as you type."
                         >
-                            {picked ? (
+                            {picked && (
                                 <div className="border-primary/50 bg-primary/5 flex items-start gap-3 rounded-lg border p-3">
                                     <Check
                                         className="text-primary mt-0.5 size-4 shrink-0"
@@ -414,7 +449,70 @@ export default function BookingForm({
                                         Change
                                     </Button>
                                 </div>
-                            ) : (
+                            )}
+
+                            {/* A regular should not have to know they have a
+                                reward waiting. The desk tells them. */}
+                            {picked && picked.loyalty.redeemable && (
+                                <div className="rounded-lg border border-amber-500/50 bg-amber-500/5 p-3">
+                                    <div className="flex items-start gap-3">
+                                        <Gem
+                                            className="mt-0.5 size-4 shrink-0 text-amber-600"
+                                            aria-hidden="true"
+                                        />
+                                        <div className="flex-1 text-sm">
+                                            <p className="font-medium">
+                                                {picked.loyalty.points} points
+                                                saved up
+                                                {discountCents > 0
+                                                    ? ` · worth $${(discountCents / 100).toFixed(2)} off this booking`
+                                                    : ' · worth a reward on a bigger booking'}
+                                            </p>
+                                            {discountCents === 0 && (
+                                                <p className="text-muted-foreground mt-0.5">
+                                                    A reward is{' '}
+                                                    {
+                                                        picked.loyalty.reward
+                                                            .formatted
+                                                    }
+                                                    , so add a service worth at
+                                                    least that to use one.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {discountCents > 0 && (
+                                        <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm font-medium">
+                                            <input
+                                                type="checkbox"
+                                                checked={form.data.redeem_points}
+                                                onChange={(event) =>
+                                                    form.setData(
+                                                        'redeem_points',
+                                                        event.target.checked,
+                                                    )
+                                                }
+                                                className="accent-primary size-4"
+                                            />
+                                            Take $
+                                            {(discountCents / 100).toFixed(2)}{' '}
+                                            off with their points
+                                        </label>
+                                    )}
+                                </div>
+                            )}
+
+                            {picked && !picked.loyalty.redeemable && (
+                                <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
+                                    <Gem className="size-4" aria-hidden="true" />
+                                    {picked.loyalty.points} points ·{' '}
+                                    {picked.loyalty.to_next} more for their next
+                                    reward.
+                                </p>
+                            )}
+
+                            {!picked && (
                                 <>
                                     <div className="grid gap-4 sm:grid-cols-2">
                                         <TextField
@@ -714,12 +812,29 @@ export default function BookingForm({
                                 )}
                             </dl>
 
+                            {redeeming && (
+                                <dl className="mt-4 space-y-1.5 border-t pt-4 text-sm">
+                                    <Line label="Services">
+                                        ${(totalCents / 100).toFixed(2)}
+                                    </Line>
+                                    <div className="flex justify-between gap-2 text-amber-700 dark:text-amber-400">
+                                        <dt>
+                                            Points ({picked?.loyalty.threshold}{' '}
+                                            used)
+                                        </dt>
+                                        <dd className="tabular-nums">
+                                            −${(discountCents / 100).toFixed(2)}
+                                        </dd>
+                                    </div>
+                                </dl>
+                            )}
+
                             <div className="mt-4 flex items-baseline justify-between border-t pt-4">
                                 <span className="text-sm font-medium">
-                                    Total
+                                    {redeeming ? 'To pay' : 'Total'}
                                 </span>
                                 <span className="text-xl font-bold tabular-nums">
-                                    ${(totalCents / 100).toFixed(2)}
+                                    ${(dueCents / 100).toFixed(2)}
                                 </span>
                             </div>
                             {totalMinutes > 0 && (
