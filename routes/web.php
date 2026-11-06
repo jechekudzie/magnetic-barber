@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\ReminderController;
 use App\Http\Controllers\Admin\ServiceCrudController;
 use App\Http\Controllers\Admin\StyleCrudController;
 use App\Http\Controllers\Admin\TeamCrudController;
+use App\Http\Controllers\Admin\TillController;
 use App\Http\Controllers\Site\BookController;
 use App\Http\Controllers\Site\HomeController;
 use App\Http\Controllers\Site\PlanController;
@@ -81,6 +82,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->middleware('can:client.view')->name('bookings.clients');
         Route::get('bookings/availability', [BookingCreateController::class, 'availability'])
             ->middleware('can:appointment.create')->name('bookings.availability');
+
+        /*
+         * The till, and the queue of proofs somebody has to check. Taking
+         * money and voiding it are different rights: anyone on the desk can
+         * take a payment, only a manager can declare one never arrived.
+         */
+        Route::get('till', [TillController::class, 'index'])
+            ->middleware('can:payment.take')->name('till');
+        Route::post('till/{appointment}', [TillController::class, 'store'])
+            ->middleware('can:payment.take')->name('till.store');
+        Route::put('till/{payment}/confirm', [TillController::class, 'confirm'])
+            ->middleware('can:payment.take')->name('till.confirm');
+        Route::put('till/{payment}/reject', [TillController::class, 'reject'])
+            ->middleware('can:sale.void')->name('till.reject');
 
         Route::get('reminders', [ReminderController::class, 'index'])
             ->middleware('can:client.view')->name('reminders');

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Branch;
+use App\Models\Payment;
 use App\Services\ReminderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -57,6 +58,28 @@ class HandleInertiaRequests extends Middleware
         );
     }
 
+    /**
+     * Payments somebody claimed that nobody has checked yet.
+     *
+     * Badged because a chair is being held on each one. Not cached: the
+     * number is small, the query is indexed, and a stale count on this is
+     * worse than a cheap one.
+     */
+    private function uncheckedPayments(Request $request): int
+    {
+        if ($request->user()?->can('payment.take') !== true) {
+            return 0;
+        }
+
+        $branch = app()->bound('currentBranch') ? app('currentBranch') : null;
+        $branch = $branch instanceof Branch ? $branch : null;
+
+        return Payment::query()
+            ->when($branch !== null, fn ($query) => $query->where('branch_id', $branch->id))
+            ->awaitingCheck()
+            ->count();
+    }
+
     public function share(Request $request): array
     {
         return [
@@ -68,6 +91,7 @@ class HandleInertiaRequests extends Middleware
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'counts' => [
                 'reminders' => $this->overdueClients($request),
+                'till' => $this->uncheckedPayments($request),
             ],
         ];
     }

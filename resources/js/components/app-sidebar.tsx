@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import {
+    Banknote,
     BellRing,
     CalendarCheck,
     CalendarRange,
@@ -38,6 +39,7 @@ const mainNavItems: NavItem[] = [
     { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
     { title: 'Bookings', href: '/admin/bookings', icon: CalendarCheck },
     { title: 'Reminders', href: '/admin/reminders', icon: BellRing, badge: 'reminders' },
+    { title: 'Till', href: '/admin/till', icon: Banknote, badge: 'till' },
     { title: 'Pricing', href: '/admin/pricing', icon: Wallet },
     { title: 'Services', href: '/admin/services', icon: Tags },
     { title: 'Categories', href: '/admin/categories', icon: FolderTree },
