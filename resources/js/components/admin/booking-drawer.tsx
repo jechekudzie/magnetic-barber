@@ -50,6 +50,28 @@ export function BookingDrawer({
         return null;
     }
 
+    /**
+     * Start and finish are the barber's clock, not a status change.
+     *
+     * Kept separate from the status menu because they are what somebody
+     * standing at the chair reaches for, and because finishing this way is
+     * what records how long the cut actually took — picking "completed" off
+     * a list does not.
+     */
+    function clock(action: 'start' | 'finish') {
+        setBusy(true);
+
+        router.put(
+            `/admin/bookings/${booking!.id}/${action}`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setBusy(false),
+                onSuccess: action === 'finish' ? onClose : undefined,
+            },
+        );
+    }
+
     function setStatus(status: string) {
         setBusy(true);
 
@@ -168,13 +190,26 @@ export function BookingDrawer({
                         </p>
                     ) : (
                         <>
-                            <Button
-                                className="w-full"
-                                disabled={busy}
-                                onClick={() => setStatus('completed')}
-                            >
-                                Complete, and award points
-                            </Button>
+                            {booking.started_at ? (
+                                <Button
+                                    className="w-full"
+                                    disabled={busy}
+                                    onClick={() => clock('finish')}
+                                >
+                                    Finish
+                                    {booking.minutes_so_far != null
+                                        ? ` · ${booking.minutes_so_far} min so far`
+                                        : ''}
+                                </Button>
+                            ) : (
+                                <Button
+                                    className="w-full"
+                                    disabled={busy}
+                                    onClick={() => clock('start')}
+                                >
+                                    Start the cut
+                                </Button>
+                            )}
                             <div className="grid grid-cols-2 gap-2">
                                 <Button
                                     variant="outline"

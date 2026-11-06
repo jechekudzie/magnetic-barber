@@ -209,6 +209,97 @@ class BookingController extends AdminController
     }
 
     /**
+     * Start the cut, from the desk machine.
+     *
+     * Its own action rather than a status change, and the same clock the app
+     * starts: a cut that runs past its slot keeps the chair blocked in the
+     * booking grid, so nobody is sold a time that is still warm.
+     */
+    public function start(Request $request, Appointment $appointment): RedirectResponse
+    {
+        $this->assertReachable($request, $appointment);
+
+        abort_if(
+            in_array($appointment->status, [
+                AppointmentStatus::Completed,
+                AppointmentStatus::Cancelled,
+                AppointmentStatus::NoShow,
+            ], true),
+            422,
+            'That visit is already finished.',
+        );
+
+        // Starting twice is a slip, not a correction. The first tap is the
+        // one that tells the truth about when the clock started.
+        if ($appointment->started_at === null) {
+            $appointment->update([
+                'status' => AppointmentStatus::InProgress,
+                'started_at' => now(),
+                'checked_in_at' => $appointment->checked_in_at ?? now(),
+            ]);
+        }
+
+        return back()->with('success', "{$appointment->reference} is in the chair.");
+    }
+
+    /**
+     * Finish the cut, and keep what it actually took.
+     */
+    public function finish(
+        Request $request,
+        Appointment $appointment,
+        LoyaltyService $loyalty,
+        ReminderService $reminders,
+    ): RedirectResponse {
+        $this->assertReachable($request, $appointment);
+
+        abort_if($appointment->started_at === null, 422, 'Start the cut before finishing it.');
+
+        if ($appointment->status !== AppointmentStatus::Completed) {
+            DB::transaction(function () use ($appointment, $loyalty, $reminders): void {
+                $finishedAt = now();
+
+                $appointment->update([
+                    'status' => AppointmentStatus::Completed,
+                    'completed_at' => $finishedAt,
+                    // Frozen here rather than derived later, so correcting a
+                    // forgotten tap cannot quietly rewrite the record.
+                    'actual_minutes' => max(
+                        1,
+                        (int) $appointment->started_at->diffInMinutes($finishedAt),
+                    ),
+                ]);
+
+                $appointment->refresh();
+                $this->recordVisit($appointment);
+                $loyalty->awardForVisit($appointment);
+
+                if ($appointment->client !== null) {
+                    $reminders->recomputeCycle($appointment->client);
+                    $reminders->cancelFor($appointment->client_id, 'Client came in');
+                }
+            });
+        }
+
+        $appointment->refresh();
+
+        return back()->with(
+            'success',
+            "{$appointment->reference} done in {$appointment->actual_minutes} minutes.",
+        );
+    }
+
+    /**
+     * A booking at a branch this user does not work at is not theirs to touch.
+     */
+    private function assertReachable(Request $request, Appointment $appointment): void
+    {
+        $reachable = $this->reachableBranches($request)->pluck('id');
+
+        abort_unless($reachable->contains($appointment->branch_id), 404);
+    }
+
+    /**
      * The branches this user may look at. An owner sees the group; everyone
      * else only the branches they actually work at.
      *
@@ -400,6 +491,13 @@ class BookingController extends AdminController
             'total' => Money::ofCents($appointment->total_cents, $appointment->currency)->toArray(),
             'address' => $appointment->houseCall?->fullAddress(),
             'note' => $appointment->client_note,
+            // The barber's clock, and whether the money actually arrived.
+            'started_at' => $appointment->started_at?->toIso8601String(),
+            'minutes_so_far' => $appointment->minutesSoFar(),
+            'paid' => $appointment->amountPaid()->toArray(),
+            'outstanding' => $appointment->outstanding()->toArray(),
+            'is_secured' => $appointment->isSecured(),
+            'is_paid_in_full' => $appointment->isPaidInFull(),
         ];
     }
 }

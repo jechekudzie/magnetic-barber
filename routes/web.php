@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\BookingCreateController;
 use App\Http\Controllers\Admin\CatalogAdminController;
 use App\Http\Controllers\Admin\CategoryCrudController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\EarningsController;
 use App\Http\Controllers\Admin\LoyaltyController;
 use App\Http\Controllers\Admin\PlanCrudController;
 use App\Http\Controllers\Admin\PricingController;
@@ -96,6 +97,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->middleware('can:payment.take')->name('till.confirm');
         Route::put('till/{payment}/reject', [TillController::class, 'reject'])
             ->middleware('can:sale.void')->name('till.reject');
+
+        /*
+         * Payroll is not done on a phone, so the owner's floor view gets a
+         * desktop of its own, over a range rather than a day.
+         */
+        Route::get('earnings', [EarningsController::class, 'index'])
+            ->middleware('can:staff.commission.view')->name('earnings');
+
+        // One tap each, from the diary, for a barber working off the desk
+        // machine rather than their own handset.
+        Route::put('bookings/{appointment}/start', [BookingController::class, 'start'])
+            ->middleware('can:appointment.checkin')->name('bookings.start');
+        Route::put('bookings/{appointment}/finish', [BookingController::class, 'finish'])
+            ->middleware('can:appointment.complete')->name('bookings.finish');
 
         Route::get('reminders', [ReminderController::class, 'index'])
             ->middleware('can:client.view')->name('reminders');

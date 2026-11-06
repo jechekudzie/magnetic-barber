@@ -28,6 +28,14 @@ export type Booking = {
     total: Money;
     address: string | null;
     note: string | null;
+    /** The barber's own clock. Null until somebody taps Start. */
+    started_at: string | null;
+    minutes_so_far: number | null;
+    /** Money claimed against it, and whether the shop actually has it. */
+    paid: Money;
+    outstanding: Money;
+    is_secured: boolean;
+    is_paid_in_full: boolean;
 };
 
 export type Grid = {

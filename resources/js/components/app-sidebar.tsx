@@ -12,6 +12,7 @@ import {
     Scissors,
     Star,
     Tags,
+    TrendingUp,
     Users,
     Wallet,
 } from 'lucide-react';
@@ -40,6 +41,7 @@ const mainNavItems: NavItem[] = [
     { title: 'Bookings', href: '/admin/bookings', icon: CalendarCheck },
     { title: 'Reminders', href: '/admin/reminders', icon: BellRing, badge: 'reminders' },
     { title: 'Till', href: '/admin/till', icon: Banknote, badge: 'till' },
+    { title: 'Earnings', href: '/admin/earnings', icon: TrendingUp },
     { title: 'Pricing', href: '/admin/pricing', icon: Wallet },
     { title: 'Services', href: '/admin/services', icon: Tags },
     { title: 'Categories', href: '/admin/categories', icon: FolderTree },
