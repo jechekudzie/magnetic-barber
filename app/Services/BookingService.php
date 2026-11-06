@@ -24,6 +24,7 @@ final class BookingService
         private readonly AvailabilityService $availability,
         private readonly LoyaltyService $loyalty,
         private readonly ReminderService $reminders,
+        private readonly CommissionService $commission,
     ) {}
 
     /**
@@ -194,6 +195,17 @@ final class BookingService
                 ]);
             }
 
+            /*
+             * The barber's rate is frozen alongside the price, for the same
+             * reason: a rate change next month must not rewrite what they
+             * earned today. Read once rather than per line, because every line
+             * in this booking goes to the same barber.
+             *
+             * Writing it now does not mean it is owed now. Earnings only count
+             * lines whose appointment actually completed.
+             */
+            $rate = $this->commission->rateFor($appointment->staff, $branch);
+
             // Price and name are frozen here. A price change next month must
             // not rewrite what this client was quoted today.
             foreach ($services as $service) {
@@ -207,6 +219,8 @@ final class BookingService
                     'currency' => $price->currency,
                     'duration_minutes' => $service->durationForLoadedBranch(),
                     'qty' => 1,
+                    'commission_rate' => $rate,
+                    'commission_cents' => $this->commission->commissionOn($price, $rate)->cents,
                 ]);
             }
 
@@ -281,6 +295,51 @@ final class BookingService
         }
 
         return null;
+    }
+
+    /**
+     * Cancel a booking.
+     *
+     * The slot is freed by the model event that maintains slot_key: a
+     * cancelled appointment no longer holds its time, so the unique index
+     * stops guarding it and somebody else can take it. Nothing is deleted —
+     * a cancelled booking is history the shop needs.
+     */
+    public function cancel(Appointment $appointment, ?User $by = null, ?string $reason = null): Appointment
+    {
+        if (in_array($appointment->status, [AppointmentStatus::Cancelled, AppointmentStatus::NoShow], true)) {
+            return $appointment;
+        }
+
+        if ($appointment->status === AppointmentStatus::Completed) {
+            throw new SlotTakenException('That visit has already happened.');
+        }
+
+        $appointment->update([
+            'status' => AppointmentStatus::Cancelled,
+            'cancelled_at' => now(),
+            'cancelled_by' => $by?->id,
+            'cancellation_reason' => $reason,
+        ]);
+
+        return $appointment->refresh();
+    }
+
+    /**
+     * How long before a booking a client may still call it off themselves.
+     */
+    public function cancellableUntil(Appointment $appointment): Carbon
+    {
+        return Carbon::instance($appointment->scheduled_start_at->toDateTime())
+            ->subHours((int) config('magnetic.cancellation_hours'));
+    }
+
+    public function clientMayCancel(Appointment $appointment): bool
+    {
+        return in_array($appointment->status, [
+            AppointmentStatus::Pending,
+            AppointmentStatus::Confirmed,
+        ], true) && now()->isBefore($this->cancellableUntil($appointment));
     }
 
     /**

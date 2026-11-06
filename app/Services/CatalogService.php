@@ -76,15 +76,12 @@ final class CatalogService
     }
 
     /**
-     * The cheapest service at a branch, for "from $7" copy on the site.
-     */
-    /**
      * The cheapest actual cut, for the "Cuts from $10" line on the hero.
      *
      * Scoped to the cuts category on purpose: the site says "cuts from", so
      * picking up a cheaper wash or scalp massage would make that copy a lie.
      */
-    public function cheapestPriceCentsFor(Branch $branch, string $categorySlug = 'cuts-and-beards'): ?int
+    public function cheapestPriceCentsFor(Branch $branch, string $categorySlug = 'cuts'): ?int
     {
         $query = fn (?string $slug) => $branch->services()
             ->wherePivot('is_active', true)

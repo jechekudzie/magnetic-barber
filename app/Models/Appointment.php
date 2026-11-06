@@ -36,11 +36,19 @@ use Illuminate\Support\Str;
  * @property int $total_cents
  * @property string $currency
  * @property int $duration_minutes
+ * @property CarbonInterface|null $checked_in_at
+ * @property CarbonInterface|null $started_at
+ * @property CarbonInterface|null $completed_at
+ * @property CarbonInterface|null $cancelled_at
+ * @property int $amount_paid_cents
+ * @property CarbonInterface|null $secured_at
+ * @property int|null $actual_minutes
  */
 #[Fillable([
     'reference', 'branch_id', 'client_id', 'staff_id', 'type', 'status', 'source',
     'scheduled_start_at', 'scheduled_end_at', 'checked_in_at', 'started_at',
     'completed_at', 'cancelled_at', 'queue_position', 'estimated_wait_minutes',
+    'amount_paid_cents', 'secured_at', 'actual_minutes',
     'style_id', 'client_note', 'staff_note', 'subtotal_cents', 'travel_fee_cents',
     'discount_cents', 'total_cents', 'currency', 'duration_minutes',
     'cancellation_reason', 'cancelled_by', 'created_by', 'slot_key',
@@ -104,6 +112,7 @@ class Appointment extends Model
             'checked_in_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
+            'secured_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
     }
@@ -201,6 +210,72 @@ class Appointment extends Model
     /**
      * A friendly, ambiguity-free label for a confirmation screen.
      */
+    /** @return HasMany<Payment, $this> */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    /**
+     * A chair is spoken for once money has been claimed against it, even
+     * before the desk has checked the proof. Whether the shop has actually
+     * been paid is amountPaid(), which is a different question.
+     */
+    public function isSecured(): bool
+    {
+        return $this->secured_at !== null;
+    }
+
+    public function amountPaid(): Money
+    {
+        return Money::ofCents($this->amount_paid_cents, $this->currency);
+    }
+
+    public function outstanding(): Money
+    {
+        $due = $this->total_cents - $this->amount_paid_cents;
+
+        return Money::ofCents(max(0, $due), $this->currency);
+    }
+
+    public function isPaidInFull(): bool
+    {
+        return $this->amount_paid_cents >= $this->total_cents;
+    }
+
+    /**
+     * How long the barber actually took, in minutes.
+     *
+     * Reads the stored figure once the cut is finished, and the clock while it
+     * is still running, so a diary can show a live timer without the caller
+     * knowing which case it is in.
+     */
+    public function minutesSoFar(): ?int
+    {
+        if ($this->actual_minutes !== null) {
+            return $this->actual_minutes;
+        }
+
+        if ($this->started_at === null) {
+            return null;
+        }
+
+        $end = $this->completed_at ?? now();
+
+        return (int) $this->started_at->diffInMinutes($end);
+    }
+
+    /**
+     * Whether this cut is past the time the catalog allowed for it. The chair
+     * is still occupied, whatever the diary says it should have been.
+     */
+    public function isOverrunning(): bool
+    {
+        return $this->status === AppointmentStatus::InProgress
+            && $this->scheduled_end_at !== null
+            && $this->scheduled_end_at->isPast();
+    }
+
     public function whenLabel(): string
     {
         if ($this->scheduled_start_at === null) {

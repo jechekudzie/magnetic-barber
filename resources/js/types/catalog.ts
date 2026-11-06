@@ -35,6 +35,8 @@ export type Service = {
     /** Null when the service was not loaded through a branch. */
     price: Money | null;
     is_free: boolean;
+    /** The price is a starting figure, settled in the chair. Render "from $20". */
+    is_from_price: boolean;
     requires_patch_test: boolean;
     patch_test_lead_hours: number | null;
     is_skin_service: boolean;

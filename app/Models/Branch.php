@@ -102,7 +102,7 @@ class Branch extends Model
     public function services(): BelongsToMany
     {
         return $this->belongsToMany(Service::class)
-            ->withPivot(['price_cents', 'currency', 'duration_minutes', 'house_call_surcharge_cents', 'is_active'])
+            ->withPivot(['price_cents', 'currency', 'is_from_price', 'duration_minutes', 'house_call_surcharge_cents', 'is_active'])
             ->withTimestamps();
     }
 

@@ -13,6 +13,10 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * The branch comes from the X-Branch-Id header on API calls, a ?branch= query
  * or session value in the admin, otherwise the user's primary branch.
+ *
+ * This runs on both the web and the API stacks, and the API stack is
+ * stateless: there is no session to read or write there, and reaching for one
+ * throws. Every session touch below is guarded accordingly.
  */
 class SetPermissionsBranch
 {
@@ -29,7 +33,10 @@ class SetPermissionsBranch
         if ($branch !== null) {
             setPermissionsTeamId($branch->id);
             app()->instance('currentBranch', $branch);
-            $request->session()->put('admin_branch_id', $branch->id);
+
+            if ($request->hasSession()) {
+                $request->session()->put('admin_branch_id', $branch->id);
+            }
         }
 
         return $next($request);
@@ -45,7 +52,7 @@ class SetPermissionsBranch
 
         $requested = $request->header('X-Branch-Id')
             ?? $request->query('branch_id')
-            ?? $request->session()->get('admin_branch_id');
+            ?? ($request->hasSession() ? $request->session()->get('admin_branch_id') : null);
 
         if ($requested !== null) {
             $branch = Branch::query()->whereKey($requested)->first();

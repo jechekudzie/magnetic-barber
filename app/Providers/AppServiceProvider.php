@@ -10,6 +10,7 @@ use App\Models\ServiceCategory;
 use App\Models\StaffProfile;
 use App\Models\Style;
 use App\Observers\CatalogObserver;
+use App\Services\Otp\OtpChannel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Date;
@@ -24,7 +25,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // How a client's login code reaches their phone. The log driver is the
+        // default until the shop has an SMS or WhatsApp account.
+        $this->app->bind(
+            OtpChannel::class,
+            fn (): OtpChannel => $this->app->make(config('magnetic.otp_channel')),
+        );
     }
 
     /**

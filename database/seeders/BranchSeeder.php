@@ -11,7 +11,7 @@ class BranchSeeder extends Seeder
     public function run(): void
     {
         $this->avenues();
-        $this->borrowdale();
+        $this->retireBorrowdale();
     }
 
     /**
@@ -29,7 +29,7 @@ class BranchSeeder extends Seeder
                 'whatsapp' => '+263781879820',
                 'email' => 'hello@magneticbarber.co.zw',
                 'address_line' => 'Devonshire House, Room 6',
-                'area' => 'Corner Josiah Chinamano and Blackstone Avenue, Avenues',
+                'area' => '34 Josiah Chinamano and Blackstone Avenue, Avenues',
                 'city' => 'Harare',
                 // Approximate. Drop a real map pin before go live.
                 'latitude' => -17.8203,
@@ -60,42 +60,16 @@ class BranchSeeder extends Seeder
     }
 
     /**
-     * A second branch, so the per branch behaviour is exercised rather than
-     * assumed: its own account prefix, its own prices, its own hours.
+     * Borrowdale was test data, created to prove the per branch behaviour
+     * rather than because the shop exists. The business runs one branch today.
+     *
+     * It is deactivated rather than deleted, because staff assignments, roles
+     * and any bookings made against it while testing still point at the row.
+     * The multi branch machinery stays in place: adding a real second branch
+     * is a row, not a migration.
      */
-    private function borrowdale(): void
+    private function retireBorrowdale(): void
     {
-        $branch = Branch::updateOrCreate(
-            ['slug' => 'borrowdale'],
-            [
-                'code' => 'BD',
-                'name' => 'Borrowdale',
-                'tagline' => 'Northside chair, same standard.',
-                'phone' => '+263782000010',
-                'whatsapp' => '+263782000010',
-                'email' => 'borrowdale@magneticbarber.co.zw',
-                'address_line' => 'Shop 4, Sam Levy Village',
-                'area' => 'Borrowdale',
-                'city' => 'Harare',
-                // Approximate. Drop a real map pin before go live.
-                'latitude' => -17.7519,
-                'longitude' => 31.0872,
-                'directions_note' => 'Upper level, past the fountain.',
-                'timezone' => 'Africa/Harare',
-                'opens_at' => '09:00',
-                'closes_at' => '18:00',
-                'days_open' => [1, 2, 3, 4, 5, 6, 0],
-                'chair_count' => 5,
-                'house_call_enabled' => false,
-                'house_call_fee_cents' => 0,
-                'sort_order' => 1,
-                'is_active' => true,
-            ],
-        );
-
-        BranchSequence::firstOrCreate(
-            ['branch_id' => $branch->id],
-            ['last_account_number' => 0],
-        );
+        Branch::where('slug', 'borrowdale')->update(['is_active' => false]);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\HasCatalogSlug;
+use App\Enums\GenderTag;
 use App\Support\Money;
 use Database\Factories\ServiceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $service_category_id
  * @property string $name
  * @property string|null $description
+ * @property GenderTag $audience
  * @property int $default_duration_minutes
  * @property int $buffer_minutes
  * @property bool $requires_patch_test
@@ -35,7 +37,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $sort_order
  * @property bool $is_active
  */
-#[Fillable(['slug', 'service_category_id', 'name', 'description', 'default_duration_minutes', 'buffer_minutes', 'requires_patch_test', 'patch_test_lead_hours', 'is_skin_service', 'is_house_call_eligible', 'requires_room', 'is_featured', 'sort_order', 'is_active'])]
+#[Fillable(['slug', 'service_category_id', 'name', 'description', 'audience', 'default_duration_minutes', 'buffer_minutes', 'requires_patch_test', 'patch_test_lead_hours', 'is_skin_service', 'is_house_call_eligible', 'requires_room', 'is_featured', 'sort_order', 'is_active'])]
 class Service extends Model
 {
     use HasCatalogSlug;
@@ -56,6 +58,7 @@ class Service extends Model
     protected function casts(): array
     {
         return [
+            'audience' => GenderTag::class,
             'requires_patch_test' => 'boolean',
             'is_skin_service' => 'boolean',
             'is_house_call_eligible' => 'boolean',
@@ -75,7 +78,7 @@ class Service extends Model
     public function branches(): BelongsToMany
     {
         return $this->belongsToMany(Branch::class)
-            ->withPivot(['price_cents', 'currency', 'duration_minutes', 'house_call_surcharge_cents', 'is_active'])
+            ->withPivot(['price_cents', 'currency', 'is_from_price', 'duration_minutes', 'house_call_surcharge_cents', 'is_active'])
             ->withTimestamps();
     }
 
@@ -117,6 +120,15 @@ class Service extends Model
         }
 
         return Money::ofCents((int) $cents, $pivot->getAttribute('currency'));
+    }
+
+    /**
+     * Whether the branch price is a starting figure rather than the final
+     * price. "From $20, depending with colour" on the printed card.
+     */
+    public function priceIsFromForLoadedBranch(): bool
+    {
+        return (bool) ($this->branchPivot()?->getAttribute('is_from_price') ?? false);
     }
 
     public function durationForLoadedBranch(): int

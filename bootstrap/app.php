@@ -8,6 +8,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -33,6 +34,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'branch' => SetPermissionsBranch::class,
+            // Client and staff tokens are not interchangeable. This refuses a
+            // mismatch by token ability, before any role or gate is consulted.
+            'ability' => CheckForAnyAbility::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

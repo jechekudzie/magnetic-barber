@@ -26,9 +26,12 @@ class ServiceResource extends JsonResource
             'slug' => $this->slug,
             'name' => $this->name,
             'description' => $this->description,
+            // Which printed price card this line is on.
+            'audience' => $this->audience->value,
             'duration_minutes' => $this->durationForLoadedBranch(),
             'price' => $price?->toArray(),
             'is_free' => $price?->isZero() ?? false,
+            'is_from_price' => $this->priceIsFromForLoadedBranch(),
             'requires_patch_test' => $this->requires_patch_test,
             'patch_test_lead_hours' => $this->patch_test_lead_hours,
             'is_skin_service' => $this->is_skin_service,

@@ -196,9 +196,17 @@
         @apply hover:border-gold/40 hover:bg-panel-alt transition-colors duration-200;
     }
 
-    /* Warm glow behind the hero and the skin band. */
+    /* The room a section sits in.
+
+       The printed price cards are not flat black: they are black marble lit
+       warm from above, with the gold picking up that light. Two radial
+       washes do the lighting, and a soft smoke image over them does the
+       stone. The mobile app bakes the same three layers into one PNG,
+       because native has no radial gradient worth the native module it
+       would cost. Change one and change the other, or the two drift. */
     .site-glow {
         background:
+            url('/images/smoke.png') top center / 100% auto no-repeat,
             radial-gradient(
                 60% 50% at 50% 0%,
                 rgb(217 169 71 / 0.16) 0%,
@@ -209,6 +217,24 @@
                 rgb(217 169 71 / 0.08) 0%,
                 transparent 70%
             );
+    }
+
+    /* The texture is decoration. Anyone who has asked for less movement and
+       less noise should get the lighting without the stone. */
+    @media (prefers-reduced-transparency: reduce) {
+        .site-glow {
+            background-image:
+                radial-gradient(
+                    60% 50% at 50% 0%,
+                    rgb(217 169 71 / 0.16) 0%,
+                    transparent 70%
+                ),
+                radial-gradient(
+                    40% 40% at 85% 30%,
+                    rgb(217 169 71 / 0.08) 0%,
+                    transparent 70%
+                );
+        }
     }
 
     /* The logo art ships on solid black. Screen blending drops that square

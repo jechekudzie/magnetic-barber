@@ -111,7 +111,7 @@ class TeamSeeder extends Seeder
             $user->branches()->syncWithoutDetaching([
                 $branch->id => [
                     'employment_type' => $member['employment']->value,
-                    'commission_rate' => $member['employment'] === EmploymentType::ChairRental ? null : 30,
+                    'commission_rate' => config('magnetic.commission_rate'),
                     'chair_rate_cents' => $member['employment'] === EmploymentType::ChairRental ? 5000 : null,
                     'currency' => 'USD',
                     'is_primary' => true,

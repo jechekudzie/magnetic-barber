@@ -35,7 +35,20 @@ export function PriceRow({ service }: { service: Service }) {
             />
 
             <span className="text-gold site-display shrink-0 text-lg tabular-nums">
-                {service.is_free ? 'Free' : (service.price?.formatted ?? '—')}
+                {service.is_free ? (
+                    'Free'
+                ) : service.price ? (
+                    <>
+                        {service.is_from_price && (
+                            <span className="text-smoke mr-1 text-xs tracking-wide uppercase">
+                                From
+                            </span>
+                        )}
+                        {service.price.formatted}
+                    </>
+                ) : (
+                    '—'
+                )}
             </span>
         </li>
     );

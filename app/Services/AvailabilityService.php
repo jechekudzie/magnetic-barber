@@ -27,6 +27,13 @@ final class AvailabilityService
     private const LEAD_MINUTES = 30;
 
     /**
+     * How long a chair stays held past now when a cut has overrun. Short on
+     * purpose: it keeps the next client out of a chair that is still warm
+     * without writing off the rest of the barber's afternoon.
+     */
+    private const OVERRUN_GRACE_MINUTES = 15;
+
+    /**
      * @param  list<int>  $serviceIds
      * @return array{
      *     date: string,
@@ -228,6 +235,11 @@ final class AvailabilityService
      * Every slot-holding appointment that day, as [start, end] minute offsets
      * from midnight, keyed by staff id. One query for the whole grid.
      *
+     * A cut that is still in the chair past the time it was given runs on
+     * here too. The diary said forty five minutes and the barber is on his
+     * seventieth, so the chair is occupied whatever the diary says — offering
+     * that slot to somebody else books a queue, not an appointment.
+     *
      * @return array<int, array<int, array{0: int, 1: int}>>
      */
     private function bookedIntervals(Branch $branch, Carbon $localDate, string $timezone): array
@@ -240,7 +252,7 @@ final class AvailabilityService
                 $localDate->copy()->startOfDay()->utc(),
                 $localDate->copy()->endOfDay()->utc(),
             ])
-            ->get(['staff_id', 'scheduled_start_at', 'scheduled_end_at']);
+            ->get(['id', 'status', 'staff_id', 'scheduled_start_at', 'scheduled_end_at', 'started_at']);
 
         $intervals = [];
 
@@ -249,6 +261,20 @@ final class AvailabilityService
 
             $start = $appointment->scheduled_start_at->copy()->timezone($timezone);
             $end = ($appointment->scheduled_end_at ?? $start)->copy()->timezone($timezone);
+
+            /*
+             * Still cutting, and past the slot it was given. Hold the chair
+             * until now plus a short grace rather than until the diary says
+             * it should have finished, because the honest answer to "when is
+             * this barber free" is "not yet".
+             */
+            if ($appointment->isOverrunning()) {
+                $runningUntil = Carbon::now($timezone)->addMinutes(self::OVERRUN_GRACE_MINUTES);
+
+                if ($runningUntil->isAfter($end)) {
+                    $end = $runningUntil;
+                }
+            }
 
             $midnight = $localDate->copy()->startOfDay();
 
