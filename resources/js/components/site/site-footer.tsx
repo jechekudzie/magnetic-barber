@@ -20,7 +20,7 @@ const columns = [
         links: [
             { label: 'Find us', href: '/visit' },
             { label: 'Book a chair', href: '/book' },
-            { label: 'Staff login', href: '/login' },
+            { label: 'Sign in', href: '/login' },
         ],
     },
 ];

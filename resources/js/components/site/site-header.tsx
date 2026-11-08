@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Menu, X } from 'lucide-react';
+import { CircleUser, LogIn, Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BranchSwitcher } from '@/components/site/branch-switcher';
 import { SiteLink } from '@/components/site/button';
@@ -17,7 +17,10 @@ const links = [
 ];
 
 export function SiteHeader({ site }: { site: SiteShared }) {
-    const { url } = usePage();
+    const { url, props } = usePage<{ auth?: { user?: { name?: string } | null } }>();
+
+    // Shared by HandleInertiaRequests on every page, signed in or not.
+    const signedIn = Boolean(props.auth?.user);
 
     /**
      * The sheet is scoped to the page it was opened on, so any navigation
@@ -76,6 +79,20 @@ export function SiteHeader({ site }: { site: SiteShared }) {
                         current={site.branch}
                         className="hidden sm:block"
                     />
+                    <SiteLink
+                        href={signedIn ? '/dashboard' : '/login'}
+                        variant="outline"
+                        size="sm"
+                        className="hidden sm:inline-flex"
+                    >
+                        {signedIn ? (
+                            <CircleUser className="size-4" aria-hidden="true" />
+                        ) : (
+                            <LogIn className="size-4" aria-hidden="true" />
+                        )}
+                        {signedIn ? 'My account' : 'Sign in'}
+                    </SiteLink>
+
                     <SiteLink href="/book" size="sm" className="hidden sm:inline-flex">
                         Book a chair
                     </SiteLink>
@@ -137,6 +154,19 @@ export function SiteHeader({ site }: { site: SiteShared }) {
                         />
                         <SiteLink href="/book" size="lg" className="w-full">
                             Book a chair
+                        </SiteLink>
+                        <SiteLink
+                            href={signedIn ? '/dashboard' : '/login'}
+                            variant="outline"
+                            size="lg"
+                            className="w-full"
+                        >
+                            {signedIn ? (
+                                <CircleUser className="size-4" aria-hidden="true" />
+                            ) : (
+                                <LogIn className="size-4" aria-hidden="true" />
+                            )}
+                            {signedIn ? 'My account' : 'Sign in'}
                         </SiteLink>
                     </div>
                 </div>

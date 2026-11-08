@@ -4,8 +4,11 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Models\User;
+use App\Support\Phone;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -41,6 +44,61 @@ class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::createUsersUsing(CreateNewUser::class);
+
+        /*
+         * Sign in with an email or a phone number.
+         *
+         * Fortify's username is the email column, and in this shop that
+         * excludes most of the people who need to sign in: barbers are
+         * created with a number and no address at all, and a client the
+         * website registered during a booking has only ever given a number.
+         *
+         * Same resolution as the API, through the same trait, so a barber
+         * typing 0782000002 reaches the same account on either surface.
+         */
+        Fortify::authenticateUsing(function (Request $request): ?User {
+            $identifier = (string) $request->input(Fortify::username(), '');
+            $password = (string) $request->input('password', '');
+
+            $user = $this->findByIdentifier($identifier);
+
+            /*
+             * Compare against a real hash whether or not the account exists,
+             * so the response takes the same time either way. Answering
+             * faster for an unknown identifier is itself an answer.
+             */
+            $knownHash = $user?->password;
+            $matches = Hash::check($password, $knownHash ?? self::TIMING_DECOY_HASH);
+
+            if ($user === null || $knownHash === null || ! $matches || ! $user->is_active) {
+                return null;
+            }
+
+            return $user;
+        });
+    }
+
+    /**
+     * A valid bcrypt hash of nothing anybody knows, so an unknown identifier
+     * still costs a full hash comparison.
+     */
+    private const TIMING_DECOY_HASH = '$2y$12$ZZZZZZZZZZZZZZZZZZZZZeZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ';
+
+    /**
+     * An email or a phone number. The number is normalised first, so
+     * 0781879820 and +263781879820 find the same person.
+     */
+    private function findByIdentifier(string $identifier): ?User
+    {
+        if (Str::contains($identifier, '@')) {
+            return User::query()->where('email', $identifier)->first();
+        }
+
+        $phone = Phone::normalise($identifier);
+
+        return $phone === null
+            ? null
+            : User::query()->where('phone', $phone)->first();
     }
 
     /**

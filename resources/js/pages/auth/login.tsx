@@ -32,16 +32,25 @@ export default function Login({ status, canResetPassword }: Props) {
                     <>
                         <div className="grid gap-6">
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Email address</Label>
+                                <Label htmlFor="email">Email or phone</Label>
+                                {/*
+                                  * type="text", not "email". Most people who
+                                  * sign in here have no email on file —
+                                  * barbers are created with a number, and a
+                                  * client the booking form registered has
+                                  * only ever given one. A type="email" field
+                                  * refuses a phone number before the server
+                                  * ever sees it.
+                                  */}
                                 <Input
                                     id="email"
-                                    type="email"
+                                    type="text"
                                     name="email"
                                     required
                                     autoFocus
                                     tabIndex={1}
-                                    autoComplete="email"
-                                    placeholder="email@example.com"
+                                    autoComplete="username"
+                                    placeholder="078 187 9820"
                                 />
                                 <InputError message={errors.email} />
                             </div>
@@ -105,5 +114,5 @@ export default function Login({ status, canResetPassword }: Props) {
 
 Login.layout = {
     title: 'Log in to your account',
-    description: 'Enter your email and password below to log in',
+    description: 'Use the email or the mobile number the shop has for you',
 };
