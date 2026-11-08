@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Services\BookingService;
 use App\Services\LoyaltyService;
 use App\Services\ReminderService;
+use App\Services\VisitService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -176,77 +177,94 @@ class DiaryController extends Controller
      * slot keeps the barber busy in the booking grid, so nobody else is sold
      * a time that is still warm.
      */
-    public function start(Request $request, Appointment $appointment): JsonResponse
+    public function start(Request $request, Appointment $appointment, VisitService $visits): JsonResponse
     {
         abort_unless($this->mayWork($request, $appointment), 403);
 
-        abort_if(
-            in_array($appointment->status, [
-                AppointmentStatus::Completed,
-                AppointmentStatus::Cancelled,
-                AppointmentStatus::NoShow,
-            ], true),
-            422,
-            'That visit is already finished.',
+        return $this->respondWith($visits->start($appointment, $request->user()));
+    }
+
+    /**
+     * Find the person standing at the desk.
+     *
+     * A number, a name, or the reference read off their phone. Not bound to
+     * a date, because somebody who booked Thursday and walked in on
+     * Wednesday is still that booking and a day view cannot find them.
+     *
+     * The same search the website's front desk runs, so the two cannot
+     * disagree about who is in the shop.
+     */
+    public function lookup(Request $request, VisitService $visits): JsonResponse
+    {
+        $user = $request->user();
+        $branch = $this->branchFor($request);
+
+        abort_unless(
+            $user->can('appointment.view.branch') || $user->can('appointment.view.own'),
+            403,
         );
 
-        // Starting twice is a slip, not a correction. The first tap is the
-        // one that tells the truth about when the clock started.
-        if ($appointment->started_at === null) {
-            $appointment->update([
-                'status' => AppointmentStatus::InProgress,
-                'started_at' => now(),
-                'checked_in_at' => $appointment->checked_in_at ?? now(),
-            ]);
-        }
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:3', 'max:60'],
+        ]);
 
-        return $this->respondWith($appointment->refresh());
+        $hits = $visits->search([$branch->id], $validated['q']);
+
+        return response()->json([
+            'data' => AppointmentResource::collection($hits),
+            'meta' => [
+                // So the app can offer "take this one" without a second
+                // round trip to work out whether it may.
+                'claimable' => $hits
+                    ->filter(fn (Appointment $appointment): bool => $visits->mayClaim($appointment, $user))
+                    ->pluck('ulid')
+                    ->values()
+                    ->all(),
+            ],
+        ]);
+    }
+
+    /**
+     * Take the booking and start it, in one tap.
+     *
+     * For the shop as it actually runs: the receptionist is out, the client
+     * is waiting, and the barber standing there is not the one the booking
+     * was auto-assigned to. Without this he either cuts somebody else's
+     * booking, which pays the wrong barber, or the client waits for the desk.
+     *
+     * Claiming only ever moves work onto yourself, so it needs none of the
+     * desk's power to move other people's. The trail records that the barber
+     * did it, not reception.
+     */
+    public function claim(Request $request, Appointment $appointment, VisitService $visits): JsonResponse
+    {
+        $user = $request->user();
+
+        abort_unless(
+            $appointment->staff_id === $user->id || $visits->mayClaim($appointment, $user),
+            403,
+            'That booking is not yours to take.',
+        );
+
+        $appointment = $visits->assign($appointment, $user, $user);
+
+        return $this->respondWith($visits->start($appointment, $user));
     }
 
     /**
      * Finish the cut, and keep what it actually took.
+     *
+     * The same code the desk runs. It used not to be: this copy never
+     * recorded the visit against the client, so a client's visit count
+     * depended on whether their last cut was closed on a phone or at the
+     * till.
      */
-    public function finish(
-        Request $request,
-        Appointment $appointment,
-        LoyaltyService $loyalty,
-        ReminderService $reminders,
-    ): JsonResponse {
+    public function finish(Request $request, Appointment $appointment, VisitService $visits): JsonResponse
+    {
         abort_unless($this->mayWork($request, $appointment), 403);
         abort_unless($request->user()->can('appointment.complete'), 403);
 
-        abort_if(
-            $appointment->started_at === null,
-            422,
-            'Start the cut before finishing it.',
-        );
-
-        if ($appointment->status !== AppointmentStatus::Completed) {
-            DB::transaction(function () use ($appointment, $loyalty, $reminders): void {
-                $finishedAt = now();
-
-                $appointment->update([
-                    'status' => AppointmentStatus::Completed,
-                    'completed_at' => $finishedAt,
-                    // Frozen here rather than derived later, so correcting a
-                    // forgotten tap cannot quietly rewrite the record.
-                    'actual_minutes' => max(
-                        1,
-                        (int) $appointment->started_at->diffInMinutes($finishedAt),
-                    ),
-                ]);
-
-                $appointment->refresh();
-                $loyalty->awardForVisit($appointment);
-
-                if ($appointment->client !== null) {
-                    $reminders->recomputeCycle($appointment->client);
-                    $reminders->cancelFor($appointment->client_id, 'Client came in');
-                }
-            });
-        }
-
-        return $this->respondWith($appointment->refresh());
+        return $this->respondWith($visits->finish($appointment));
     }
 
     private function respondWith(Appointment $appointment): JsonResponse

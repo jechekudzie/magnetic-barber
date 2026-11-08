@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\CatalogAdminController;
 use App\Http\Controllers\Admin\CategoryCrudController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\EarningsController;
+use App\Http\Controllers\Admin\FrontDeskController;
 use App\Http\Controllers\Admin\LoyaltyController;
 use App\Http\Controllers\Admin\PlanCrudController;
 use App\Http\Controllers\Admin\PricingController;
@@ -74,6 +75,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('bookings', [BookingController::class, 'index'])
             ->middleware('can:appointment.view.branch')->name('bookings');
+
+        /*
+         * The front desk: find whoever is standing there, by number, name or
+         * the reference off their phone, then put them in a chair.
+         *
+         * Gated on appointment.checkin, which is the right question for a
+         * desk: reception holds it, and so does a barber, so a barber can
+         * work the desk when nobody is on it. What they may do once there is
+         * narrower — reception moves any booking to any chair, a barber only
+         * ever takes one onto himself — which FrontDeskController enforces.
+         */
+        Route::get('desk', [FrontDeskController::class, 'index'])
+            ->middleware('can:appointment.checkin')->name('desk');
+        Route::put('desk/{appointment}/barber', [FrontDeskController::class, 'assign'])
+            ->middleware('can:appointment.checkin')->name('desk.assign');
 
         Route::get('bookings/create', [BookingCreateController::class, 'create'])
             ->middleware('can:appointment.create')->name('bookings.create');

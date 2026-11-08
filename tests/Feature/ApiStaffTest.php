@@ -255,3 +255,96 @@ it('reports a quiet day as zero rather than failing', function () {
         ->assertOk()
         ->assertJsonPath('data.earned.cents', 0);
 });
+
+/* ------------------------------------------- the desk, from a handset */
+
+/*
+ * The shop as it actually runs: the receptionist is out, the client is
+ * waiting, and the barber standing there is not the one the booking was
+ * auto-assigned to. The alternative is cutting under somebody else's name,
+ * which pays the wrong barber.
+ */
+it('lets a barber look up whoever walked in', function () {
+    $appointment = bookWith($this->owner, $this->slot->addHours(3), '0781879820');
+
+    asStaff($this->barber);
+
+    $this->withHeaders(branchHeader())
+        ->getJson('/api/v1/staff/lookup?q=0781879820')
+        ->assertOk()
+        ->assertJsonPath('data.0.reference', $appointment->reference)
+        // Offered as claimable, so the app can show "take this one" without
+        // a second round trip.
+        ->assertJsonPath('meta.claimable.0', $appointment->ulid);
+});
+
+it('refuses a lookup too short to mean anything', function () {
+    asStaff($this->barber);
+
+    $this->withHeaders(branchHeader())
+        ->getJson('/api/v1/staff/lookup?q=07')
+        ->assertStatus(422);
+});
+
+it('lets a barber claim a booking and start it in one tap', function () {
+    $appointment = bookWith($this->owner, $this->slot->addHours(4), '0772000222');
+
+    asStaff($this->barber);
+
+    $this->withHeaders(branchHeader())
+        ->putJson("/api/v1/staff/appointments/{$appointment->ulid}/claim")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'in_progress');
+
+    $appointment->refresh();
+
+    expect($appointment->staff_id)->toBe($this->barber->id)
+        ->and($appointment->assigned_by)->toBe($this->barber->id)
+        ->and($appointment->started_by)->toBe($this->barber->id)
+        ->and($appointment->started_at)->not->toBeNull();
+
+    // The money follows the work, or the owner is paid for the barber's cut.
+    expect($appointment->services->pluck('staff_id')->unique()->all())
+        ->toBe([$this->barber->id]);
+});
+
+it('will not let a barber claim a cut somebody already started', function () {
+    $appointment = bookWith($this->owner, $this->slot->addHours(5), '0772000333');
+    $appointment->update([
+        'status' => AppointmentStatus::InProgress,
+        'started_at' => now(),
+    ]);
+
+    asStaff($this->barber);
+
+    $this->withHeaders(branchHeader())
+        ->putJson("/api/v1/staff/appointments/{$appointment->ulid}/claim")
+        ->assertForbidden();
+
+    expect($appointment->refresh()->staff_id)->toBe($this->owner->id);
+});
+
+/*
+ * This used to differ between the two surfaces: finishing at the till
+ * recorded the visit against the client, finishing on a handset did not, so
+ * a client's visit count depended on which screen closed their last cut.
+ */
+it('records the visit against the client when a barber finishes on his phone', function () {
+    $appointment = bookWith($this->barber, $this->slot->addHours(6), '0772000444');
+
+    asStaff($this->barber);
+
+    $this->withHeaders(branchHeader())
+        ->putJson("/api/v1/staff/appointments/{$appointment->ulid}/start")
+        ->assertOk();
+
+    $this->withHeaders(branchHeader())
+        ->putJson("/api/v1/staff/appointments/{$appointment->ulid}/finish")
+        ->assertOk();
+
+    $profile = $appointment->refresh()->client->clientProfile;
+
+    expect($profile->visit_count)->toBe(1)
+        ->and($profile->last_visit_at)->not->toBeNull()
+        ->and($profile->lifetime_value_cents)->toBe($appointment->total_cents);
+});

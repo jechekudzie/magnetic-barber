@@ -25,6 +25,9 @@ use Illuminate\Support\Str;
  * @property int $branch_id
  * @property int $client_id
  * @property int|null $staff_id
+ * @property int|null $assigned_by
+ * @property CarbonInterface|null $assigned_at
+ * @property int|null $started_by
  * @property AppointmentType $type
  * @property AppointmentStatus $status
  * @property string $source
@@ -46,6 +49,7 @@ use Illuminate\Support\Str;
  */
 #[Fillable([
     'reference', 'branch_id', 'client_id', 'staff_id', 'type', 'status', 'source',
+    'assigned_by', 'assigned_at', 'started_by',
     'scheduled_start_at', 'scheduled_end_at', 'checked_in_at', 'started_at',
     'completed_at', 'cancelled_at', 'queue_position', 'estimated_wait_minutes',
     'amount_paid_cents', 'secured_at', 'actual_minutes',
@@ -109,6 +113,7 @@ class Appointment extends Model
             'status' => AppointmentStatus::class,
             'scheduled_start_at' => 'datetime',
             'scheduled_end_at' => 'datetime',
+            'assigned_at' => 'datetime',
             'checked_in_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -159,6 +164,27 @@ class Appointment extends Model
     public function staff(): BelongsTo
     {
         return $this->belongsTo(User::class, 'staff_id');
+    }
+
+    /**
+     * Who put this barber in this chair. Null for a booking that still has
+     * the barber it was created with.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function assignedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_by');
+    }
+
+    /**
+     * Who tapped Start: the desk, or the barber working alone.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function startedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'started_by');
     }
 
     /** @return BelongsTo<Style, $this> */

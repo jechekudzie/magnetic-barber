@@ -154,6 +154,24 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
             Route::put('appointments/{appointment}/start', [DiaryController::class, 'start'])
                 ->name('appointments.start');
+
+            /*
+             * Find whoever is standing at the desk, then take the booking.
+             *
+             * Both exist for one case: the receptionist is out, the client is
+             * waiting, and the barber standing there is not the one the
+             * booking was auto-assigned to. Without claim he cuts under
+             * somebody else's name and the wrong barber is paid.
+             *
+             * Claiming only moves work onto yourself, so it needs none of
+             * reception's power to move other people's. The controller
+             * enforces that; the route only gates on being staff.
+             */
+            Route::get('lookup', [DiaryController::class, 'lookup'])
+                ->middleware('throttle:30,1')
+                ->name('lookup');
+            Route::put('appointments/{appointment}/claim', [DiaryController::class, 'claim'])
+                ->name('appointments.claim');
             Route::put('appointments/{appointment}/finish', [DiaryController::class, 'finish'])
                 ->name('appointments.finish');
             Route::put('appointments/{appointment}/status', [DiaryController::class, 'updateStatus'])

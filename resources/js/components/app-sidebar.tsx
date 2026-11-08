@@ -13,6 +13,7 @@ import {
     Star,
     Tags,
     TrendingUp,
+    UserSearch,
     Users,
     Wallet,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ import type { NavItem } from '@/types';
  */
 const mainNavItems: NavItem[] = [
     { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
+    { title: 'Front desk', href: '/admin/desk', icon: UserSearch },
     { title: 'Bookings', href: '/admin/bookings', icon: CalendarCheck },
     { title: 'Reminders', href: '/admin/reminders', icon: BellRing, badge: 'reminders' },
     { title: 'Till', href: '/admin/till', icon: Banknote, badge: 'till' },

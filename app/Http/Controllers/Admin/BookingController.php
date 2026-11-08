@@ -9,13 +9,13 @@ use App\Models\ClientProfile;
 use App\Models\User;
 use App\Services\LoyaltyService;
 use App\Services\ReminderService;
+use App\Services\VisitService;
 use App\Support\Money;
 use App\Support\Phone;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Response;
 
@@ -92,7 +92,7 @@ class BookingController extends AdminController
         $maySeeContact = $request->user()?->can('client.contact.view') ?? false;
 
         $bookings = $appointments
-            ->map(fn (Appointment $appointment): array => $this->row($appointment, $timezone, $maySeeContact))
+            ->map(fn (Appointment $appointment): array => $this->appointmentRow($appointment, $timezone, $maySeeContact))
             ->all();
 
         return inertia('admin/bookings', [
@@ -193,15 +193,7 @@ class BookingController extends AdminController
             ]);
 
             if ($status === AppointmentStatus::Completed) {
-                $this->recordVisit($appointment);
-                $loyalty->awardForVisit($appointment->refresh());
-
-                // A finished visit is when we learn how often this client
-                // actually comes, and resets the clock on chasing them.
-                if ($appointment->client !== null) {
-                    $reminders->recomputeCycle($appointment->client);
-                    $reminders->cancelFor($appointment->client_id, 'Client came in');
-                }
+                $this->settle($appointment->refresh(), $loyalty, $reminders);
             }
         });
 
@@ -211,33 +203,15 @@ class BookingController extends AdminController
     /**
      * Start the cut, from the desk machine.
      *
-     * Its own action rather than a status change, and the same clock the app
-     * starts: a cut that runs past its slot keeps the chair blocked in the
-     * booking grid, so nobody is sold a time that is still warm.
+     * Its own action rather than a status change, and literally the same code
+     * the barber's phone runs, so the clock cannot mean two different things
+     * depending on which screen started it.
      */
-    public function start(Request $request, Appointment $appointment): RedirectResponse
+    public function start(Request $request, Appointment $appointment, VisitService $visits): RedirectResponse
     {
         $this->assertReachable($request, $appointment);
 
-        abort_if(
-            in_array($appointment->status, [
-                AppointmentStatus::Completed,
-                AppointmentStatus::Cancelled,
-                AppointmentStatus::NoShow,
-            ], true),
-            422,
-            'That visit is already finished.',
-        );
-
-        // Starting twice is a slip, not a correction. The first tap is the
-        // one that tells the truth about when the clock started.
-        if ($appointment->started_at === null) {
-            $appointment->update([
-                'status' => AppointmentStatus::InProgress,
-                'started_at' => now(),
-                'checked_in_at' => $appointment->checked_in_at ?? now(),
-            ]);
-        }
+        $visits->start($appointment, $request->user());
 
         return back()->with('success', "{$appointment->reference} is in the chair.");
     }
@@ -245,79 +219,16 @@ class BookingController extends AdminController
     /**
      * Finish the cut, and keep what it actually took.
      */
-    public function finish(
-        Request $request,
-        Appointment $appointment,
-        LoyaltyService $loyalty,
-        ReminderService $reminders,
-    ): RedirectResponse {
+    public function finish(Request $request, Appointment $appointment, VisitService $visits): RedirectResponse
+    {
         $this->assertReachable($request, $appointment);
 
-        abort_if($appointment->started_at === null, 422, 'Start the cut before finishing it.');
-
-        if ($appointment->status !== AppointmentStatus::Completed) {
-            DB::transaction(function () use ($appointment, $loyalty, $reminders): void {
-                $finishedAt = now();
-
-                $appointment->update([
-                    'status' => AppointmentStatus::Completed,
-                    'completed_at' => $finishedAt,
-                    // Frozen here rather than derived later, so correcting a
-                    // forgotten tap cannot quietly rewrite the record.
-                    'actual_minutes' => max(
-                        1,
-                        (int) $appointment->started_at->diffInMinutes($finishedAt),
-                    ),
-                ]);
-
-                $appointment->refresh();
-                $this->recordVisit($appointment);
-                $loyalty->awardForVisit($appointment);
-
-                if ($appointment->client !== null) {
-                    $reminders->recomputeCycle($appointment->client);
-                    $reminders->cancelFor($appointment->client_id, 'Client came in');
-                }
-            });
-        }
-
-        $appointment->refresh();
+        $appointment = $visits->finish($appointment);
 
         return back()->with(
             'success',
             "{$appointment->reference} done in {$appointment->actual_minutes} minutes.",
         );
-    }
-
-    /**
-     * A booking at a branch this user does not work at is not theirs to touch.
-     */
-    private function assertReachable(Request $request, Appointment $appointment): void
-    {
-        $reachable = $this->reachableBranches($request)->pluck('id');
-
-        abort_unless($reachable->contains($appointment->branch_id), 404);
-    }
-
-    /**
-     * The branches this user may look at. An owner sees the group; everyone
-     * else only the branches they actually work at.
-     *
-     * @return Collection<int, Branch>
-     */
-    private function reachableBranches(Request $request): Collection
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return collect();
-        }
-
-        if ($user->hasRole('owner') || $user->hasRole('super-admin')) {
-            return Branch::query()->active()->ordered()->get();
-        }
-
-        return $user->branches()->where('is_active', true)->orderBy('sort_order')->get();
     }
 
     /**
@@ -432,72 +343,33 @@ class BookingController extends AdminController
      * A completed visit is what makes someone a returning client, so the
      * counters that drive retention are updated here rather than on booking.
      */
-    private function recordVisit(Appointment $appointment): void
-    {
+    /**
+     * Everything a completed visit owes: the client's history, their points,
+     * and calling off the chase. Reached from the status dropdown, which can
+     * complete a visit nobody ever tapped Start on; finish() goes through
+     * VisitService instead, which does this and the clock.
+     */
+    private function settle(
+        Appointment $appointment,
+        LoyaltyService $loyalty,
+        ReminderService $reminders,
+    ): void {
         $profile = ClientProfile::query()
             ->where('user_id', $appointment->client_id)
             ->first();
 
-        if ($profile === null) {
-            return;
-        }
-
-        $profile->update([
+        $profile?->update([
             'first_visit_at' => $profile->first_visit_at ?? now(),
             'last_visit_at' => now(),
             'visit_count' => $profile->visit_count + 1,
             'lifetime_value_cents' => $profile->lifetime_value_cents + $appointment->total_cents,
         ]);
-    }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function row(Appointment $appointment, string $timezone, bool $maySeeContact = false): array
-    {
-        $start = $appointment->scheduled_start_at?->copy()->timezone($timezone);
-        $end = $appointment->scheduled_end_at?->copy()->timezone($timezone);
+        $loyalty->awardForVisit($appointment);
 
-        return [
-            'id' => $appointment->ulid,
-            'reference' => $appointment->reference,
-            'status' => $appointment->status->value,
-            'status_label' => $appointment->status->label(),
-            'type' => $appointment->type->value,
-            'is_house_call' => $appointment->isHouseCall(),
-            'branch' => $appointment->branch?->slug,
-            'branch_name' => $appointment->branch?->name,
-            'date' => $start?->toDateString(),
-            'day_label' => $start?->format('D j M'),
-            'time_label' => $start?->format('g:ia'),
-            // Minutes from midnight, so the grid can place a block without
-            // parsing dates in the browser.
-            'start_minutes' => $start !== null ? ($start->hour * 60 + $start->minute) : 0,
-            'end_minutes' => $end !== null ? ($end->hour * 60 + $end->minute) : 0,
-            'duration_minutes' => $appointment->duration_minutes,
-            'staff_id' => $appointment->staff?->ulid,
-            'staff' => $appointment->staff?->staffProfile?->name() ?? $appointment->staff?->name,
-            'client' => [
-                'name' => $appointment->client?->name,
-                // Reception and managers need this to chase a no show. A
-                // barber gets it masked, by design.
-                'phone' => $maySeeContact
-                    ? $appointment->client?->phone
-                    : Phone::mask($appointment->client?->phone),
-                'account_number' => $appointment->client?->clientProfile()->value('account_number'),
-                'visit_count' => $appointment->client?->clientProfile()->value('visit_count') ?? 0,
-            ],
-            'services' => $appointment->services->pluck('name_snapshot')->all(),
-            'total' => Money::ofCents($appointment->total_cents, $appointment->currency)->toArray(),
-            'address' => $appointment->houseCall?->fullAddress(),
-            'note' => $appointment->client_note,
-            // The barber's clock, and whether the money actually arrived.
-            'started_at' => $appointment->started_at?->toIso8601String(),
-            'minutes_so_far' => $appointment->minutesSoFar(),
-            'paid' => $appointment->amountPaid()->toArray(),
-            'outstanding' => $appointment->outstanding()->toArray(),
-            'is_secured' => $appointment->isSecured(),
-            'is_paid_in_full' => $appointment->isPaidInFull(),
-        ];
+        if ($appointment->client !== null) {
+            $reminders->recomputeCycle($appointment->client);
+            $reminders->cancelFor($appointment->client_id, 'Client came in');
+        }
     }
 }
