@@ -64,16 +64,23 @@ type BookProps = {
 type Mode = 'scheduled' | 'house_call';
 
 /**
- * Day and time come before services on purpose: people want to know what is
- * even available before they start choosing. The grid is drawn against the
- * shortest service the branch sells, then re-checked once the real selection
- * is known.
+ * The same order the app asks in, deliberately: card, then what, then who,
+ * then when. A client who has booked on their phone should not have to learn
+ * a second sequence on the website.
+ *
+ * Services come before the day because the duration decides which slots can
+ * even be offered. Asking for a time first means drawing the grid against a
+ * guess and then taking it away.
+ *
+ * "Where" is the one step the app has no equivalent for: the app books the
+ * shop, while the site also sells house calls.
  */
 const STEPS = [
     { key: 'where', label: 'Where' },
-    { key: 'when', label: 'Day and time' },
+    { key: 'card', label: 'Who for' },
     { key: 'services', label: 'What you want' },
     { key: 'barber', label: 'Who cuts' },
+    { key: 'when', label: 'Day and time' },
     { key: 'you', label: 'You' },
 ];
 
@@ -124,7 +131,12 @@ export default function Book({
      * offers two dyes at two prices with nothing to say which is theirs.
      * Asked before the services, the way the app asks it.
      */
-    const [card, setCard] = useState<Audience | null>(null);
+    const [card, setCard] = useState<Audience | null>(() => {
+        // Arriving from the gallery already says which card they are on.
+        const audience = preselectedStyle?.service?.audience;
+
+        return audience === 'men' || audience === 'women' ? audience : null;
+    });
 
     const visibleCategories = useMemo(
         () => {
@@ -167,7 +179,7 @@ export default function Book({
     } | null>(null);
 
     useEffect(() => {
-        if (step < 1 || date === '') {
+        if (step < 4 || date === '') {
             return;
         }
 
@@ -214,7 +226,7 @@ export default function Book({
     }, [step, slotKey]);
 
     const availability = fetched?.key === slotKey ? fetched.data : null;
-    const loadingSlots = step >= 1 && availability === null;
+    const loadingSlots = step >= 4 && availability === null;
 
     const slots =
         staff === 'any'
@@ -315,6 +327,13 @@ export default function Book({
 
     /* ---------------------------------------------------------------- steps */
 
+    /** A different card is a different menu, so the old picks no longer hold. */
+    function chooseCard(value: Audience) {
+        setCard(value);
+        setSelected([]);
+        setSlot(null);
+    }
+
     function goTo(next: number) {
         setStep(next);
         setFurthest((value) => Math.max(value, next));
@@ -328,10 +347,13 @@ export default function Book({
 
     const canContinue = [
         true,
-        slot !== null,
-        selected.length > 0 && slotStillFits,
-        slotStillFits,
-        form.data.name.trim().length > 1 &&
+        card !== null,
+        selected.length > 0,
+        true,
+        slot !== null && slotStillFits,
+        slot !== null &&
+            slotStillFits &&
+            form.data.name.trim().length > 1 &&
             form.data.phone.trim().length > 5 &&
             (mode === 'scheduled' || form.data.address_line.trim().length > 3),
     ][step];
@@ -407,7 +429,7 @@ export default function Book({
                                 />
 
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <ModeOption
+                                    <ChoiceCard
                                         active={mode === 'scheduled'}
                                         onClick={() => {
                                             setMode('scheduled');
@@ -423,7 +445,7 @@ export default function Book({
                                         ]}
                                     />
 
-                                    <ModeOption
+                                    <ChoiceCard
                                         active={mode === 'house_call'}
                                         disabled={!branch.house_call_enabled}
                                         onClick={() => {
@@ -454,60 +476,47 @@ export default function Book({
                             </div>
                         )}
 
-                        {/* 2. When ------------------------------------------ */}
+                        {/* 2. Which card ---------------------------------- */}
                         {step === 1 && (
                             <div className="space-y-6">
                                 <StepHeading
-                                    icon={CalendarDays}
-                                    title="When suits you?"
-                                    lede="Pick the day and time first, then we fit the services around it."
+                                    icon={Users}
+                                    title="Who is this for?"
+                                    lede="The shop prints two cards and the same job is priced differently on each, so we only show you yours."
                                 />
 
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <PickerField
-                                        label="Day"
-                                        value={dayLabel}
-                                        placeholder="Choose a day"
-                                        icon={CalendarDays}
-                                        onClick={() => setDateOpen(true)}
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <ChoiceCard
+                                        active={card === 'men'}
+                                        onClick={() => chooseCard('men')}
+                                        icon={Scissors}
+                                        title="Men’s card"
+                                        lede="Men, boys and beards"
+                                        points={[
+                                            'Cuts, dye, tint and curls',
+                                            'Kids cuts are printed on this card',
+                                            'The Deep Clean facial is on both',
+                                        ]}
                                     />
-                                    <PickerField
-                                        label="Time"
-                                        value={slot?.label ?? null}
-                                        placeholder={
-                                            loadingSlots
-                                                ? 'Checking the diary'
-                                                : 'Choose a time'
-                                        }
-                                        icon={Clock}
-                                        onClick={() => setTimeOpen(true)}
-                                        disabled={date === ''}
+
+                                    <ChoiceCard
+                                        active={card === 'women'}
+                                        onClick={() => chooseCard('women')}
+                                        icon={Sparkles}
+                                        title="Ladies card"
+                                        lede="Ladies cuts and colour"
+                                        points={[
+                                            'Cut, dye, tint and Xcurl',
+                                            'Eyebrow shaping and mini facial',
+                                            'The Deep Clean facial is on both',
+                                        ]}
                                     />
                                 </div>
 
-                                {availability?.provisional && (
-                                    <p className="text-smoke text-xs leading-relaxed">
-                                        Times shown allow{' '}
-                                        {formatDuration(
-                                            availability.duration_minutes,
-                                        )}
-                                        , our shortest service. Pick what you
-                                        want next and we will confirm the time
-                                        still works.
-                                    </p>
-                                )}
-
-                                {availability?.closed && (
-                                    <div className="site-panel flex items-start gap-3 p-4">
-                                        <TriangleAlert
-                                            className="text-gold mt-0.5 size-5 shrink-0"
-                                            aria-hidden="true"
-                                        />
-                                        <p className="text-smoke text-sm">
-                                            {availability.reason}
-                                        </p>
-                                    </div>
-                                )}
+                                <p className="text-smoke text-xs leading-relaxed">
+                                    Picking the other card later clears what you chose off
+                                    this one, because the two menus are not the same.
+                                </p>
                             </div>
                         )}
 
@@ -528,46 +537,6 @@ export default function Book({
                                     />
                                 )}
 
-                                <div>
-                                    <h3 className="site-eyebrow mb-3">
-                                        Who is this for?
-                                    </h3>
-                                    <div
-                                        role="tablist"
-                                        aria-label="Price card"
-                                        className="border-bone/8 bg-panel flex max-w-sm rounded-full border p-1"
-                                    >
-                                        {(
-                                            [
-                                                ['men', "Men's"],
-                                                ['women', 'Ladies'],
-                                            ] as Array<[Audience, string]>
-                                        ).map(([value, label]) => (
-                                            <button
-                                                key={value}
-                                                type="button"
-                                                role="tab"
-                                                aria-selected={card === value}
-                                                onClick={() => {
-                                                    setCard(value);
-                                                    // A different card is a
-                                                    // different menu, so what
-                                                    // was picked off the old
-                                                    // one no longer applies.
-                                                    setSelected([]);
-                                                }}
-                                                className={cn(
-                                                    'flex-1 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors',
-                                                    card === value
-                                                        ? 'bg-gold text-ink'
-                                                        : 'text-smoke hover:text-gold',
-                                                )}
-                                            >
-                                                {label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
 
                                 {visibleCategories.map((category) => (
                                     <div key={category.slug}>
@@ -712,8 +681,61 @@ export default function Book({
                             </div>
                         )}
 
-                        {/* 5. You ------------------------------------------- */}
+                        {/* 5. When ------------------------------------------ */}
                         {step === 4 && (
+                            <div className="space-y-6">
+                                <StepHeading
+                                    icon={CalendarDays}
+                                    title="When suits you?"
+                                    lede="Only times long enough for everything you picked are offered."
+                                />
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <PickerField
+                                        label="Day"
+                                        value={dayLabel}
+                                        placeholder="Choose a day"
+                                        icon={CalendarDays}
+                                        onClick={() => setDateOpen(true)}
+                                    />
+                                    <PickerField
+                                        label="Time"
+                                        value={slot?.label ?? null}
+                                        placeholder={
+                                            loadingSlots
+                                                ? 'Checking the diary'
+                                                : 'Choose a time'
+                                        }
+                                        icon={Clock}
+                                        onClick={() => setTimeOpen(true)}
+                                        disabled={date === ''}
+                                    />
+                                </div>
+
+                                {slot !== null && (
+                                    <p className="text-smoke text-xs leading-relaxed">
+                                        {slot.label}, with{' '}
+                                        {formatDuration(selection.totalMinutes)}{' '}
+                                        held in the chair for you.
+                                    </p>
+                                )}
+
+                                {availability?.closed && (
+                                    <div className="site-panel flex items-start gap-3 p-4">
+                                        <TriangleAlert
+                                            className="text-gold mt-0.5 size-5 shrink-0"
+                                            aria-hidden="true"
+                                        />
+                                        <p className="text-smoke text-sm">
+                                            {availability.reason}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 6. You ------------------------------------------- */}
+                        {step === 5 && (
                             <div className="space-y-6">
                                 <StepHeading
                                     icon={User}
@@ -1182,7 +1204,7 @@ export default function Book({
                                                 ? null
                                                 : form.data.area
                                         }
-                                        onPick={() => goTo(4)}
+                                        onPick={() => goTo(5)}
                                         pickLabel="Add address"
                                     />
                                 )}
@@ -1190,7 +1212,7 @@ export default function Book({
                                     label="Day"
                                     value={slot ? dayLabel : null}
                                     onPick={() => {
-                                        goTo(1);
+                                        goTo(4);
                                         setDateOpen(true);
                                     }}
                                 />
@@ -1198,7 +1220,7 @@ export default function Book({
                                     label="Time"
                                     value={slot?.label ?? null}
                                     onPick={() => {
-                                        goTo(1);
+                                        goTo(4);
                                         setTimeOpen(true);
                                     }}
                                 />
@@ -1425,7 +1447,7 @@ function StepHeading({
     );
 }
 
-function ModeOption({
+function ChoiceCard({
     active,
     onClick,
     icon: Icon,
