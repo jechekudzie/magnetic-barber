@@ -42,6 +42,8 @@ import type {
     Slot,
 } from '@/types/booking';
 import type {
+    Audience,
+    Service,
     ServiceCategory,
     SiteShared,
     StaffMember,
@@ -114,19 +116,38 @@ export default function Book({
     );
 
     // A house call can only be for services that can leave the building.
+    /*
+     * Which printed card the client is on.
+     *
+     * The shop charges differently for the same job on each — a dye is $10
+     * on the men's card and $15 on the ladies' — so showing one merged menu
+     * offers two dyes at two prices with nothing to say which is theirs.
+     * Asked before the services, the way the app asks it.
+     */
+    const [card, setCard] = useState<Audience | null>(null);
+
     const visibleCategories = useMemo(
-        () =>
-            mode === 'scheduled'
-                ? categories
-                : categories
-                      .map((category) => ({
-                          ...category,
-                          services: (category.services ?? []).filter(
-                              (service) => service.is_house_call_eligible,
-                          ),
-                      }))
-                      .filter((category) => (category.services ?? []).length > 0),
-        [categories, mode],
+        () => {
+            // The chosen card, anything priced the same on both, and the kids
+            // cut, which the shop prints on the men's card.
+            const onThisCard = (service: Service): boolean =>
+                card === null ||
+                service.audience === card ||
+                service.audience === 'unisex' ||
+                (service.audience === 'kids' && card === 'men');
+
+            return categories
+                .map((category) => ({
+                    ...category,
+                    services: (category.services ?? []).filter(
+                        (service) =>
+                            onThisCard(service) &&
+                            (mode === 'scheduled' || service.is_house_call_eligible),
+                    ),
+                }))
+                .filter((category) => category.services.length > 0);
+        },
+        [categories, mode, card],
     );
 
     const bookable = barbers.filter(
@@ -506,6 +527,47 @@ export default function Book({
                                         onRepick={() => setTimeOpen(true)}
                                     />
                                 )}
+
+                                <div>
+                                    <h3 className="site-eyebrow mb-3">
+                                        Who is this for?
+                                    </h3>
+                                    <div
+                                        role="tablist"
+                                        aria-label="Price card"
+                                        className="border-bone/8 bg-panel flex max-w-sm rounded-full border p-1"
+                                    >
+                                        {(
+                                            [
+                                                ['men', "Men's"],
+                                                ['women', 'Ladies'],
+                                            ] as Array<[Audience, string]>
+                                        ).map(([value, label]) => (
+                                            <button
+                                                key={value}
+                                                type="button"
+                                                role="tab"
+                                                aria-selected={card === value}
+                                                onClick={() => {
+                                                    setCard(value);
+                                                    // A different card is a
+                                                    // different menu, so what
+                                                    // was picked off the old
+                                                    // one no longer applies.
+                                                    setSelected([]);
+                                                }}
+                                                className={cn(
+                                                    'flex-1 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors',
+                                                    card === value
+                                                        ? 'bg-gold text-ink'
+                                                        : 'text-smoke hover:text-gold',
+                                                )}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
                                 {visibleCategories.map((category) => (
                                     <div key={category.slug}>

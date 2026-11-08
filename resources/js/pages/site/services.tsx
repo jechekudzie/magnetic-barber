@@ -4,21 +4,47 @@ import { SiteLink } from '@/components/site/button';
 import { PriceRow } from '@/components/site/price-row';
 import { Container, Section } from '@/components/site/section';
 import { cn } from '@/lib/utils';
-import type { ServiceCategory, SiteShared } from '@/types/catalog';
+import type { Audience, ServiceCategory, SiteShared } from '@/types/catalog';
 
 type ServicesProps = {
     site: SiteShared;
     categories: ServiceCategory[];
 };
 
+/**
+ * The shop hands out two cards, and they charge differently for the same job
+ * — a dye is $10 on the men's and $15 on the ladies'. One merged list is
+ * therefore wrong rather than merely long: it shows two dyes at two prices
+ * with nothing to say which is yours. The app splits them the same way.
+ */
+const CARDS: Array<{ key: Audience; label: string }> = [
+    { key: 'men', label: "Men's" },
+    { key: 'women', label: 'Ladies' },
+];
+
 export default function Services({ site, categories }: ServicesProps) {
+    const [card, setCard] = useState<Audience>('men');
     const [active, setActive] = useState<string>('all');
     const branch = site.branch;
 
+    // The chosen card, anything priced the same on both, and the kids cut,
+    // which the shop prints on the men's card.
+    const onThisCard = (audience: Audience): boolean =>
+        audience === card || audience === 'unisex' || (audience === 'kids' && card === 'men');
+
+    const forCard = categories
+        .map((category) => ({
+            ...category,
+            services: (category.services ?? []).filter((service) =>
+                onThisCard(service.audience),
+            ),
+        }))
+        .filter((category) => category.services.length > 0);
+
     const visible =
         active === 'all'
-            ? categories
-            : categories.filter((category) => category.slug === active);
+            ? forCard
+            : forCard.filter((category) => category.slug === active);
 
     return (
         <>
@@ -32,7 +58,7 @@ export default function Services({ site, categories }: ServicesProps) {
             <section className="site-glow border-bone/8 border-b">
                 <Container className="py-16 sm:py-20">
                     <p className="site-eyebrow mb-4">
-                        Everything we sell, in one menu
+                        The men's and ladies' price cards
                     </p>
                     <h1 className="site-display max-w-2xl text-4xl sm:text-5xl lg:text-6xl">
                         Prices, in full, before you sit down.
@@ -55,13 +81,42 @@ export default function Services({ site, categories }: ServicesProps) {
                 <Section>
                     {/* Category filter. Scrolls sideways on a phone rather
                         than wrapping into a wall of chips. */}
+                    {/* Which card first, because it changes the prices
+                        underneath and not merely what is listed. */}
+                    <div
+                        role="tablist"
+                        aria-label="Price card"
+                        className="border-bone/8 bg-panel mb-8 flex max-w-xs rounded-full border p-1"
+                    >
+                        {CARDS.map((option) => (
+                            <button
+                                key={option.key}
+                                type="button"
+                                role="tab"
+                                aria-selected={card === option.key}
+                                onClick={() => {
+                                    setCard(option.key);
+                                    setActive('all');
+                                }}
+                                className={cn(
+                                    'flex-1 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors',
+                                    card === option.key
+                                        ? 'bg-gold text-ink'
+                                        : 'text-smoke hover:text-gold',
+                                )}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+
                     <div className="scrollbar-none -mx-5 mb-10 flex gap-2 overflow-x-auto px-5 sm:mx-0 sm:flex-wrap sm:px-0">
                         <FilterChip
                             label="Everything"
                             active={active === 'all'}
                             onClick={() => setActive('all')}
                         />
-                        {categories.map((category) => (
+                        {forCard.map((category) => (
                             <FilterChip
                                 key={category.slug}
                                 label={category.name}
