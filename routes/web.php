@@ -15,6 +15,8 @@ use App\Http\Controllers\Admin\ServiceCrudController;
 use App\Http\Controllers\Admin\StyleCrudController;
 use App\Http\Controllers\Admin\TeamCrudController;
 use App\Http\Controllers\Admin\TillController;
+use App\Http\Controllers\PaymentProofController;
+use App\Http\Controllers\Site\AccountController;
 use App\Http\Controllers\Site\BookController;
 use App\Http\Controllers\Site\HomeController;
 use App\Http\Controllers\Site\PlanController;
@@ -22,6 +24,7 @@ use App\Http\Controllers\Site\ServiceController;
 use App\Http\Controllers\Site\SkinController;
 use App\Http\Controllers\Site\StyleController;
 use App\Http\Controllers\Site\VisitController;
+use App\Http\Middleware\EnsureStaff;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -56,6 +59,27 @@ Route::post('book', [BookController::class, 'store'])
 Route::get('booked/{appointment}', [BookController::class, 'confirmed'])->name('booking.confirmed');
 
 /*
+ * A client's own page. Signing in on the site used to land them on the staff
+ * dashboard, which they had no permission for; everything here already
+ * existed in the app and the two are meant to match.
+ */
+/*
+ * A proof of payment, to whoever is entitled to see it.
+ *
+ * auth:sanctum rather than auth so the one route serves both surfaces: a
+ * session on the desk machine, a token from a handset.
+ */
+Route::get('payments/{payment}/proof', PaymentProofController::class)
+    ->middleware('auth:sanctum')
+    ->name('payments.proof');
+
+Route::middleware('auth')->group(function () {
+    Route::get('account', [AccountController::class, 'show'])->name('account');
+    Route::put('account/bookings/{appointment}/cancel', [AccountController::class, 'cancel'])
+        ->name('account.cancel');
+});
+
+/*
 |--------------------------------------------------------------------------
 | Admin
 |--------------------------------------------------------------------------
@@ -64,7 +88,12 @@ Route::get('booked/{appointment}', [BookController::class, 'confirmed'])->name('
 |
 */
 
-Route::middleware(['auth', 'verified'])->group(function () {
+/*
+ * EnsureStaff before verified: a client who lands here is at the wrong door,
+ * not a failed request, and should be sent to their own page rather than
+ * asked to verify an email they may not have.
+ */
+Route::middleware(['auth', EnsureStaff::class, 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     Route::prefix('admin')->name('admin.')->group(function () {

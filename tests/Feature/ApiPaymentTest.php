@@ -20,6 +20,8 @@ use Laravel\Sanctum\Sanctum;
 beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
     Storage::fake('public');
+    // Proofs live on the private disk; the public one is for gallery shots.
+    Storage::fake('local');
 
     $this->branch = Branch::factory()->create([
         'slug' => 'harare-avenues', 'code' => 'MB', 'timezone' => 'Africa/Harare',
@@ -96,7 +98,7 @@ it('keeps the screenshot and hands back a link to it', function () {
         'proof' => UploadedFile::fake()->image('innbucks.png'),
     ])->assertCreated()->assertJsonPath('data.proof_url', fn ($url) => is_string($url));
 
-    expect(Storage::disk('public')->files('payment-proofs'))->toHaveCount(1);
+    expect(Storage::disk('local')->files('payment-proofs'))->toHaveCount(1);
 });
 
 it('insists on a transaction reference', function () {
@@ -353,4 +355,53 @@ it('leaves a cut that finished on time out of the way', function () {
 
     // A finished visit holds nothing: the chair is free again.
     expect(collect($grid['staff'])->flatMap(fn ($row) => $row['slots']))->not->toBeEmpty();
+});
+
+/* -------------------------------------------------- proofs are private */
+
+/*
+ * These used to land on the public disk, where the only thing between an
+ * EcoCash screenshot — phone number, name, amount — and anyone holding the
+ * URL was an unguessable filename.
+ */
+it('keeps a proof of payment off the public disk', function () {
+    Sanctum::actingAs($this->client, ['client']);
+
+    $this->postJson("/api/v1/bookings/{$this->appointment->ulid}/payment", [
+        'method' => 'ecocash',
+        'amount_cents' => 1000,
+        'reference' => 'MP260101.1234.A00001',
+        'proof' => UploadedFile::fake()->image('proof.jpg'),
+    ])->assertCreated();
+
+    $payment = Payment::query()->latest('id')->sole();
+
+    expect($payment->proof_path)->not->toBeNull()
+        ->and(Storage::disk('local')->exists($payment->proof_path))->toBeTrue()
+        ->and(Storage::disk('public')->exists($payment->proof_path))->toBeFalse()
+        // And it is handed out by a route that checks, not a storage URL.
+        ->and($payment->proofUrl())->toContain("/payments/{$payment->ulid}/proof");
+});
+
+it('shows a proof only to the client who sent it and to the desk', function () {
+    Sanctum::actingAs($this->client, ['client']);
+
+    $this->postJson("/api/v1/bookings/{$this->appointment->ulid}/payment", [
+        'method' => 'ecocash',
+        'amount_cents' => 1000,
+        'reference' => 'MP260101.1234.A00002',
+        'proof' => UploadedFile::fake()->image('proof.jpg'),
+    ])->assertCreated();
+
+    $payment = Payment::query()->latest('id')->sole();
+    $url = "/payments/{$payment->ulid}/proof";
+
+    // Somebody signed in, but not theirs and not on the desk.
+    $stranger = User::factory()->create();
+    $this->app['auth']->forgetGuards();
+    $this->actingAs($stranger)->get($url)->assertForbidden();
+
+    // The client who sent it.
+    $this->app['auth']->forgetGuards();
+    $this->actingAs($this->client)->get($url)->assertOk();
 });

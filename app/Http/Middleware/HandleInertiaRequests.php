@@ -87,6 +87,9 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                // Which door "My account" opens. Staff and clients share a
+                // users table, so the header cannot work it out on its own.
+                'is_staff' => $request->user()?->isStaff() ?? false,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'counts' => [

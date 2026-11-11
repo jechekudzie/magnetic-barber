@@ -16,11 +16,31 @@ use RuntimeException;
  */
 final class UploadedImage
 {
+    /** Gallery and staff shots: meant to be seen by anybody on the site. */
     public static function store(UploadedFile $file, string $folder): string
+    {
+        return self::put($file, $folder, 'public');
+    }
+
+    /**
+     * A file nobody but the shop should see.
+     *
+     * Payment proofs are the case: an EcoCash screenshot carries a phone
+     * number, a name and an amount. On the public disk the only thing
+     * protecting it is an unguessable filename, which is not protection, it
+     * is obscurity. These go on the private disk and are served through a
+     * route that checks who is asking.
+     */
+    public static function storePrivately(UploadedFile $file, string $folder): string
+    {
+        return self::put($file, $folder, 'local');
+    }
+
+    private static function put(UploadedFile $file, string $folder, string $disk): string
     {
         $name = Str::ulid().'.'.$file->getClientOriginalExtension();
 
-        $path = $file->storeAs($folder, $name, 'public');
+        $path = $file->storeAs($folder, $name, $disk);
 
         if ($path === false) {
             throw new RuntimeException('Could not save that photo. Check the storage disk.');

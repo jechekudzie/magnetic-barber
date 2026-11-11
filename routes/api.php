@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Staff\DiaryController;
 use App\Http\Controllers\Api\V1\Staff\EarningsController;
 use App\Http\Controllers\Api\V1\Staff\PaymentDeskController;
 use App\Http\Controllers\Api\V1\StyleController;
+use App\Http\Middleware\RequireDeliverableOtp;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -81,14 +82,23 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             ->middleware('throttle:10,1')
             ->name('client.login');
 
-        // The code flow, kept for when the shop has an SMS account.
-        Route::post('client/start', [ClientAuthController::class, 'start'])
-            ->middleware('throttle:6,1')
-            ->name('client.start');
+        /*
+         * The code flow, kept for when the shop has an SMS account.
+         *
+         * Shut while no channel delivers, because `start` hands the code back
+         * in its own response when nothing can send it — which is what makes
+         * the flow drivable on a laptop and an account takeover on a public
+         * host. Binding a real channel is what opens it.
+         */
+        Route::middleware(RequireDeliverableOtp::class)->group(function () {
+            Route::post('client/start', [ClientAuthController::class, 'start'])
+                ->middleware('throttle:6,1')
+                ->name('client.start');
 
-        Route::post('client/verify', [ClientAuthController::class, 'verify'])
-            ->middleware('throttle:10,1')
-            ->name('client.verify');
+            Route::post('client/verify', [ClientAuthController::class, 'verify'])
+                ->middleware('throttle:10,1')
+                ->name('client.verify');
+        });
 
         Route::post('staff/login', [StaffAuthController::class, 'login'])
             ->middleware('throttle:10,1')

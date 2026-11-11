@@ -6,10 +6,13 @@ use App\Models\StaffProfile;
 use App\Models\User;
 use App\Models\VerificationCode;
 use App\Services\ClientAccountService;
+use App\Services\Otp\LogOtpChannel;
+use App\Services\Otp\OtpChannel;
 use App\Support\Phone;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Tests\Support\FakeOtpChannel;
 
 beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
@@ -20,7 +23,28 @@ beforeEach(function () {
     // The throttles are real middleware; a shared limiter would make the
     // order tests run in matter.
     RateLimiter::clear('staff-login:barber@magnetic.test|127.0.0.1');
+
+    // The code flow is shut while nothing can send a code, so exercising it
+    // needs a channel that says it delivers. The code is then read off the
+    // channel rather than out of the response, which is what a real
+    // deployment does.
+    $this->otp = new FakeOtpChannel;
+    $this->app->instance(OtpChannel::class, $this->otp);
 });
+
+/** Ask for a code, then read it the way the client would, off their phone. */
+function startAndRead(string $phone = '0781879820'): string
+{
+    test()->postJson('/api/v1/auth/client/start', ['phone' => $phone])->assertOk();
+
+    return sentCode($phone);
+}
+
+/** The code the shop just sent, as the client would read it off their phone. */
+function sentCode(string $phone = '0781879820'): string
+{
+    return test()->otp->codeFor($phone) ?? '';
+}
 
 /* ---------------------------------------------------------------- clients */
 
@@ -38,14 +62,14 @@ it('hashes the code rather than storing it', function () {
     $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820']);
 
     $record = VerificationCode::sole();
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
 
     expect($record->code_hash)->not->toBe($code)
         ->and(strlen($record->code_hash))->toBeGreaterThan(20);
 });
 
 it('registers a new client on their first verified code', function () {
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
 
     $response = $this->postJson('/api/v1/auth/client/verify', [
         'phone' => '0781879820',
@@ -69,12 +93,12 @@ it('asks for a name only when the number is new to us', function () {
 
     $this->postJson('/api/v1/auth/client/verify', [
         'phone' => '0781879820',
-        'code' => $start->json('code'),
+        'code' => sentCode(),
     ])->assertOk()->assertJsonPath('user.name', 'Rudo Chikafu');
 });
 
 it('refuses to register without a name', function () {
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
 
     $this->postJson('/api/v1/auth/client/verify', ['phone' => '0781879820', 'code' => $code])
         ->assertStatus(422)
@@ -102,12 +126,12 @@ it('burns a code after five wrong guesses', function () {
 
     // Even the right code is now dead.
     $this->postJson('/api/v1/auth/client/verify', [
-        'phone' => '0781879820', 'code' => $start->json('code'), 'name' => 'Tendai',
+        'phone' => '0781879820', 'code' => sentCode(), 'name' => 'Tendai',
     ])->assertStatus(422);
 });
 
 it('spends a code, so it cannot be replayed', function () {
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
 
     $this->postJson('/api/v1/auth/client/verify', [
         'phone' => '0781879820', 'code' => $code, 'name' => 'Tendai Moyo',
@@ -119,8 +143,8 @@ it('spends a code, so it cannot be replayed', function () {
 });
 
 it('kills the previous code when a client asks for another', function () {
-    $first = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
-    $second = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $first = startAndRead();
+    $second = startAndRead();
 
     $this->postJson('/api/v1/auth/client/verify', [
         'phone' => '0781879820', 'code' => $first, 'name' => 'Tendai',
@@ -132,7 +156,7 @@ it('kills the previous code when a client asks for another', function () {
 });
 
 it('rejects an expired code', function () {
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
 
     VerificationCode::sole()->update(['expires_at' => now()->subMinute()]);
 
@@ -372,7 +396,7 @@ it('locks the staff door after five wrong passwords', function () {
 /* --------------------------------------------------------------------- me */
 
 it('reports a client to themselves', function () {
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
     $token = $this->postJson('/api/v1/auth/client/verify', [
         'phone' => '0781879820', 'code' => $code, 'name' => 'Tendai Moyo',
     ])->json('token');
@@ -410,7 +434,7 @@ it('refuses an anonymous caller', function () {
 });
 
 it('signs out by destroying only the token that was used', function () {
-    $code = $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])->json('code');
+    $code = startAndRead();
     $token = $this->postJson('/api/v1/auth/client/verify', [
         'phone' => '0781879820', 'code' => $code, 'name' => 'Tendai Moyo',
     ])->json('token');
@@ -425,4 +449,38 @@ it('signs out by destroying only the token that was used', function () {
     $this->app['auth']->forgetGuards();
 
     $this->withToken($token)->getJson('/api/v1/me')->assertStatus(401);
+});
+
+/*
+ * The code flow hands the code back in its own response when nothing can
+ * send it, which is what makes it drivable on a laptop. Left open on a
+ * public host that is an account takeover, so the routes are shut while no
+ * channel delivers.
+ */
+it('shuts the code flow while nothing can send a code', function () {
+    // The log channel: writes the code to a file, delivers nothing.
+    $this->app->instance(OtpChannel::class, new LogOtpChannel);
+
+    $this->postJson('/api/v1/auth/client/start', ['phone' => '0781879820'])
+        ->assertStatus(503)
+        ->assertJsonPath('code', 'otp_unavailable');
+
+    $this->postJson('/api/v1/auth/client/verify', [
+        'phone' => '0781879820', 'code' => '123456',
+    ])->assertStatus(503);
+
+    // Nothing was issued, so nothing is sitting there to be guessed at.
+    expect(VerificationCode::count())->toBe(0);
+});
+
+it('still signs a client in with a password while codes are off', function () {
+    $this->app->instance(OtpChannel::class, new LogOtpChannel);
+
+    app(ClientAccountService::class)->register('Tendai Moyo', '0781879820', $this->branch);
+    User::where('phone', '+263781879820')->update(['password' => Hash::make('a-real-password')]);
+
+    $this->postJson('/api/v1/auth/client/login', [
+        'identifier' => '0781879820',
+        'password' => 'a-real-password',
+    ])->assertOk()->assertJsonStructure(['token']);
 });

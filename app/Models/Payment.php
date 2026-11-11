@@ -94,9 +94,19 @@ class Payment extends Model
         return Money::ofCents($this->amount_cents, $this->currency);
     }
 
+    /**
+     * Where to look at the proof.
+     *
+     * A route rather than a storage URL: the file sits on the private disk,
+     * because a screenshot of an EcoCash payment carries a phone number, a
+     * name and an amount, and an unguessable filename on a public disk is
+     * obscurity rather than protection. The route checks who is asking.
+     */
     public function proofUrl(): ?string
     {
-        return $this->proof_path === null ? null : Storage::url($this->proof_path);
+        return $this->proof_path === null
+            ? null
+            : route('payments.proof', ['payment' => $this->ulid]);
     }
 
     /**

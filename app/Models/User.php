@@ -118,9 +118,17 @@ class User extends Authenticatable implements PasskeyUser
         return $this->branches()->whereKey($branchId)->exists();
     }
 
+    /**
+     * Somebody the shop employs, as opposed to somebody it cuts.
+     *
+     * Working at a branch counts as well as holding a staff profile: the
+     * branch_user row is what every admin screen actually scopes by, and a
+     * manager can exist without a barber's public profile. No client is ever
+     * attached to a branch, which is what makes this a clean line.
+     */
     public function isStaff(): bool
     {
-        return $this->staffProfile()->exists();
+        return $this->staffProfile()->exists() || $this->branches()->exists();
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Branch;
 use App\Models\User;
 
 test('guests are redirected to the login page', function () {
@@ -7,10 +8,25 @@ test('guests are redirected to the login page', function () {
     $response->assertRedirect(route('login'));
 });
 
-test('authenticated users can visit the dashboard', function () {
-    $user = User::factory()->create();
-    $this->actingAs($user);
+/*
+ * This used to assert that any signed-in user could see the dashboard, which
+ * was true and was the bug: clients and staff share a users table, so a
+ * client who signed in on the website landed in the staff shell.
+ */
+test('staff can visit the dashboard', function () {
+    $branch = Branch::factory()->create();
 
-    $response = $this->get(route('dashboard'));
-    $response->assertOk();
+    $staff = User::factory()->create();
+    $staff->branches()->attach($branch, ['is_primary' => true]);
+
+    $this->actingAs($staff)->get(route('dashboard'))->assertOk();
+});
+
+test('a client is sent to their own page instead', function () {
+    // No branch and no staff profile: somebody the shop cuts, not employs.
+    $client = User::factory()->create();
+
+    $this->actingAs($client)
+        ->get(route('dashboard'))
+        ->assertRedirect(route('account'));
 });

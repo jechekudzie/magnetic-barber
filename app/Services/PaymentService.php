@@ -59,7 +59,9 @@ final class PaymentService
                 'reference' => $data['reference'] ?? null,
                 'proof_path' => $proof === null
                     ? null
-                    : UploadedImage::store($proof, 'payment-proofs'),
+                    // Private: a proof carries a number, a name and an
+                    // amount, and is served through an authorised route.
+                    : UploadedImage::storePrivately($proof, 'payment-proofs'),
                 'paid_at' => $data['paid_at'] ?? now(),
                 'recorded_by' => $recordedBy?->id,
                 // takenInPerson is only true when somebody recorded it, so

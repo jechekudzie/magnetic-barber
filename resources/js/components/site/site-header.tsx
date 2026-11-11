@@ -17,10 +17,17 @@ const links = [
 ];
 
 export function SiteHeader({ site }: { site: SiteShared }) {
-    const { url, props } = usePage<{ auth?: { user?: { name?: string } | null } }>();
+    const { url, props } = usePage<{
+        auth?: { user?: { name?: string } | null; is_staff?: boolean };
+    }>();
 
     // Shared by HandleInertiaRequests on every page, signed in or not.
     const signedIn = Boolean(props.auth?.user);
+
+    // Staff and clients share a users table, and the back of house is not a
+    // client's account page. Sending them to the wrong one is how a client
+    // ends up looking at an admin shell that refuses them everything.
+    const accountHref = props.auth?.is_staff ? '/dashboard' : '/account';
 
     /**
      * The sheet is scoped to the page it was opened on, so any navigation
@@ -80,7 +87,7 @@ export function SiteHeader({ site }: { site: SiteShared }) {
                         className="hidden sm:block"
                     />
                     <SiteLink
-                        href={signedIn ? '/dashboard' : '/login'}
+                        href={signedIn ? accountHref : '/login'}
                         variant="outline"
                         size="sm"
                         className="hidden sm:inline-flex"
@@ -156,7 +163,7 @@ export function SiteHeader({ site }: { site: SiteShared }) {
                             Book a chair
                         </SiteLink>
                         <SiteLink
-                            href={signedIn ? '/dashboard' : '/login'}
+                            href={signedIn ? accountHref : '/login'}
                             variant="outline"
                             size="lg"
                             className="w-full"
