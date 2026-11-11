@@ -37,6 +37,7 @@ class Preflight extends Command
     {
         $this->checkSecurity();
         $this->checkDelivery();
+        $this->checkCaches();
         $this->checkStorage();
         $this->checkShop();
 
@@ -119,6 +120,68 @@ class Preflight extends Command
             $this->stop(
                 'Mail goes to a log file',
                 'Password reset emails will never arrive. Configure a real mailer.',
+            );
+        }
+    }
+
+    /**
+     * Caches built before the code they describe.
+     *
+     * The failure this catches is a bare 500 with nothing in the log, which
+     * is the worst kind to debug: a cached route table from before a release
+     * has no idea about its new routes, so route() throws deep inside a view
+     * and the page dies before the logger gets a look in. Payment::proofUrl()
+     * is exactly that shape.
+     *
+     * Deploys should clear and rebuild in that order — artisan optimize after
+     * the code and the assets are in place, never before.
+     */
+    private function checkCaches(): void
+    {
+        $sources = [
+            base_path('routes/web.php'),
+            base_path('routes/api.php'),
+            base_path('routes/settings.php'),
+        ];
+
+        $newestRoute = max(array_map(
+            fn (string $file): int => is_file($file) ? (int) filemtime($file) : 0,
+            $sources,
+        ));
+
+        foreach (glob(base_path('bootstrap/cache/routes-*.php')) ?: [] as $cache) {
+            if (filemtime($cache) < $newestRoute) {
+                $this->stop(
+                    'The route cache is older than the routes',
+                    'Pages die with a bare 500 and nothing in the log. '.
+                    'Run php artisan route:cache after deploying, not before.',
+                );
+            }
+        }
+
+        $configCache = base_path('bootstrap/cache/config.php');
+
+        if (is_file($configCache)) {
+            $newestConfig = max(array_map(
+                fn (string $file): int => (int) filemtime($file),
+                glob(config_path('*.php')) ?: [config_path('app.php')],
+            ));
+
+            if (filemtime($configCache) < $newestConfig) {
+                $this->stop(
+                    'The config cache is older than the config',
+                    'The app is running on settings that no longer exist. '.
+                    'Run php artisan config:cache.',
+                );
+            }
+        }
+
+        // Every Inertia page is served through the one root view, so a
+        // missing manifest is every page, not one.
+        if (! is_file(public_path('build/manifest.json'))) {
+            $this->stop(
+                'No Vite manifest',
+                'Every page will throw. Run npm run build before serving.',
             );
         }
     }

@@ -92,3 +92,38 @@ it('mentions that login codes are off without blocking the launch', function () 
         ->expectsOutputToContain('Login codes cannot be sent')
         ->assertSuccessful();
 });
+
+/*
+ * The failure this catches is the nastiest kind: a cached route table from
+ * before a release knows nothing about its new routes, so route() throws
+ * inside a view and the page dies with a bare 500 before the logger sees it.
+ */
+it('stops a launch whose route cache predates its routes', function () {
+    readyShop();
+
+    $cache = base_path('bootstrap/cache/routes-v7.php');
+    file_put_contents($cache, '<?php return [];');
+    touch($cache, now()->subYear()->getTimestamp());
+
+    try {
+        $this->artisan('magnetic:preflight')
+            ->expectsOutputToContain('route cache is older than the routes')
+            ->assertFailed();
+    } finally {
+        @unlink($cache);
+    }
+});
+
+it('says nothing about a route cache built after the routes', function () {
+    readyShop();
+
+    $cache = base_path('bootstrap/cache/routes-v7.php');
+    file_put_contents($cache, '<?php return [];');
+    touch($cache, now()->addMinute()->getTimestamp());
+
+    try {
+        $this->artisan('magnetic:preflight')->assertSuccessful();
+    } finally {
+        @unlink($cache);
+    }
+});
