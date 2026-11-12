@@ -129,10 +129,26 @@ export function SiteFooter({ site }: { site: SiteShared }) {
                     </div>
                 )}
 
-                <p className="text-smoke/70 border-bone/8 mt-8 border-t pt-8 text-xs">
-                    &copy; {new Date().getFullYear()} Magnetic Barbershop. All
-                    rights reserved.
-                </p>
+                <div className="text-smoke/70 border-bone/8 mt-8 flex flex-col gap-3 border-t pt-8 text-xs sm:flex-row sm:items-center sm:justify-between">
+                    <p>
+                        &copy; {new Date().getFullYear()} Magnetic Barbershop.
+                        All rights reserved.
+                    </p>
+                    <nav aria-label="Legal" className="flex gap-5">
+                        <Link
+                            href="/privacy"
+                            className="hover:text-gold transition-colors"
+                        >
+                            Privacy
+                        </Link>
+                        <Link
+                            href="/terms"
+                            className="hover:text-gold transition-colors"
+                        >
+                            Terms
+                        </Link>
+                    </nav>
+                </div>
             </Container>
         </footer>
     );

@@ -19,6 +19,7 @@ use App\Http\Controllers\PaymentProofController;
 use App\Http\Controllers\Site\AccountController;
 use App\Http\Controllers\Site\BookController;
 use App\Http\Controllers\Site\HomeController;
+use App\Http\Controllers\Site\LegalController;
 use App\Http\Controllers\Site\PlanController;
 use App\Http\Controllers\Site\ServiceController;
 use App\Http\Controllers\Site\SkinController;
@@ -43,6 +44,14 @@ Route::get('styles/{slug}', [StyleController::class, 'show'])->name('styles.show
 Route::get('skin', SkinController::class)->name('skin');
 Route::get('plans', PlanController::class)->name('plans');
 Route::get('visit', VisitController::class)->name('visit');
+
+/*
+ * The legal pages. Public and unauthenticated on purpose: the app stores and
+ * anyone deciding whether to give us a number must be able to read these
+ * without an account.
+ */
+Route::get('privacy', [LegalController::class, 'privacy'])->name('privacy');
+Route::get('terms', [LegalController::class, 'terms'])->name('terms');
 
 /*
  * The booking wizard. Lookup is rate limited because it answers "is this

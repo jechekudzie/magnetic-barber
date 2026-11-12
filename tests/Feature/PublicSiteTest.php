@@ -21,6 +21,8 @@ it('renders every public page without auth', function (string $path, string $com
     'plans' => ['/plans', 'site/plans'],
     'visit' => ['/visit', 'site/visit'],
     'book' => ['/book', 'site/book'],
+    'privacy' => ['/privacy', 'site/privacy'],
+    'terms' => ['/terms', 'site/terms'],
 ]);
 
 it('shares the branch list and contact links with every page', function () {
