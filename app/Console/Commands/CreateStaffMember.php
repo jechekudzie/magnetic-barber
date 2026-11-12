@@ -115,52 +115,67 @@ class CreateStaffMember extends Command
 
         // Anyone who signs in needs an email; a barber who only appears on the
         // team page does not.
-        $signsIn = in_array($role, ['owner', 'branch-manager', 'receptionist'], true)
-            || $this->option('email') !== null
-            || ($interactive && confirm(label: "Does {$name} sign into the admin?", default: true));
+        $needsEmail = in_array($role, ['owner', 'branch-manager', 'receptionist'], true);
 
-        $email = null;
-        $secret = null;
+        $email = $this->option('email');
 
-        if ($signsIn) {
-            $email = $this->option('email') ?: ($interactive ? text(
-                label: 'Email for signing in',
-                required: true,
-                validate: fn (string $value): ?string => filter_var($value, FILTER_VALIDATE_EMAIL) === false
-                    ? 'That is not an email address.'
-                    : null,
-            ) : null);
+        if ($email === null && $interactive) {
+            $wantsEmail = $needsEmail || confirm(
+                label: "Does {$name} also sign into the admin in a browser?",
+                default: false,
+            );
 
-            if ($email === null) {
-                $this->error("A {$role} signs into the admin, so --email is required.");
-
-                return self::FAILURE;
+            if ($wantsEmail) {
+                $email = text(
+                    label: 'Email for signing in',
+                    required: true,
+                    validate: fn (string $value): ?string => filter_var($value, FILTER_VALIDATE_EMAIL) === false
+                        ? 'That is not an email address.'
+                        : null,
+                );
             }
+        }
 
-            $secret = $this->option('password') ?: ($interactive ? password(
-                label: 'Password (leave blank to generate one)',
-                validate: function (string $value): ?string {
-                    if ($value === '') {
-                        return null;
-                    }
+        if ($needsEmail && $email === null) {
+            $this->error("A {$role} works the admin in a browser, so --email is required.");
 
-                    $validator = validator(
-                        ['password' => $value],
-                        ['password' => ['string', Password::min(12)->letters()->numbers()]],
-                    );
+            return self::FAILURE;
+        }
 
-                    return $validator->fails()
-                        ? 'At least 12 characters, with letters and numbers.'
-                        : null;
-                },
-            ) : '');
+        /*
+         * Everybody gets a password, including a barber with no email.
+         *
+         * This used to set one only for the roles that work the admin in a
+         * browser, on the reasoning that a barber was just a face on the team
+         * page. That stopped being true when barbers got the handset app: they
+         * claim a walk in, start and finish a cut and read their own earnings,
+         * signing in with their phone number as the identifier. A barber
+         * created without a password cannot open the app at all, and the
+         * command reported success anyway.
+         */
+        $secret = $this->option('password') ?: ($interactive ? password(
+            label: 'Password (leave blank to generate one)',
+            validate: function (string $value): ?string {
+                if ($value === '') {
+                    return null;
+                }
 
-            // Blank means "generate one", whether that came from an empty
-            // prompt or from there being no terminal to prompt at.
-            if ($secret === '') {
-                $secret = Str::password(16);
-                $generated = true;
-            }
+                $validator = validator(
+                    ['password' => $value],
+                    ['password' => ['string', Password::min(12)->letters()->numbers()]],
+                );
+
+                return $validator->fails()
+                    ? 'At least 12 characters, with letters and numbers.'
+                    : null;
+            },
+        ) : '');
+
+        // Blank means "generate one", whether that came from an empty prompt
+        // or from there being no terminal to prompt at.
+        if ($secret === '') {
+            $secret = Str::password(16);
+            $generated = true;
         }
 
         $user = DB::transaction(function () use ($name, $normalised, $email, $secret, $branch, $role): User {
@@ -175,9 +190,8 @@ class CreateStaffMember extends Command
             $user->phone_verified_at = now();
             $user->is_active = true;
 
-            if ($secret !== null) {
-                $user->password = Hash::make($secret);
-            }
+            // Unconditional now that every staff member gets one.
+            $user->password = Hash::make($secret);
 
             $user->save();
 
@@ -213,9 +227,10 @@ class CreateStaffMember extends Command
         $this->newLine();
         $this->info("{$user->name} created as {$role} at {$branch->name}.");
 
-        if ($email !== null) {
-            $this->line("  Sign in with: {$email}");
-        }
+        // The app takes either, so say which ones actually work for them.
+        $this->line($email === null
+            ? "  Signs into the app with: {$user->phone}"
+            : "  Signs in with: {$email} or {$user->phone}");
 
         if (isset($generated)) {
             $this->newLine();
